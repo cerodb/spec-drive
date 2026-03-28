@@ -1,0 +1,12 @@
+{
+  "name": "spec-drive",
+  "version": "1.0.0",
+  "description": "Spec-driven development: idea -> research -> requirements -> design -> tasks -> autonomous execution with quality gates.",
+  "license": "MIT",
+  "scripts": {
+    "test:structure": "echo 'structure tests placeholder'",
+    "test:hooks": "echo 'hooks tests placeholder'",
+    "test:schema": "echo 'schema tests placeholder'",
+    "test:commands": "echo 'commands tests placeholder'"
+  }
+}
