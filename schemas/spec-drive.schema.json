@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spec-drive/schemas/spec-drive-state.json",
+  "title": ".spec-drive-state.json",
+  "description": "State file that tracks spec-drive execution progress. Committed to git, collocated with spec artifacts.",
+  "type": "object",
+  "required": ["name", "basePath", "phase"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Project name (e.g., my-project or P283-spec-drive)"
+    },
+    "basePath": {
+      "type": "string",
+      "description": "Absolute path to the spec directory (e.g., ~/spec-drive-projects/my-project/spec)"
+    },
+    "phase": {
+      "type": "string",
+      "enum": ["idea", "research", "requirements", "design", "tasks", "execution"],
+      "description": "Current phase in the spec-driven development lifecycle"
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["normal", "auto"],
+      "default": "normal",
+      "description": "Execution mode. normal = approval gates between phases. auto = full autonomous cycle."
+    },
+    "taskIndex": {
+      "type": "integer",
+      "default": 0,
+      "description": "0-based index of the current task in tasks.md"
+    },
+    "totalTasks": {
+      "type": "integer",
+      "default": 0,
+      "description": "Total number of tasks in tasks.md"
+    },
+    "taskIteration": {
+      "type": "integer",
+      "default": 1,
+      "description": "Retry count for the current task. Resets to 1 when advancing to next task."
+    },
+    "maxTaskIterations": {
+      "type": "integer",
+      "default": 5,
+      "description": "Maximum retries per task before stopping"
+    },
+    "globalIteration": {
+      "type": "integer",
+      "default": 1,
+      "description": "Total loop iterations across all tasks"
+    },
+    "maxGlobalIterations": {
+      "type": "integer",
+      "default": 100,
+      "description": "Safety cap on total loop iterations to prevent infinite token burn"
+    },
+    "awaitingApproval": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether the current phase is waiting for user approval before proceeding"
+    },
+    "parallelGroup": {
+      "type": "object",
+      "description": "Tracks parallel [P] task batch execution state",
+      "properties": {
+        "startIndex": {
+          "type": "integer",
+          "description": "First task index in the parallel batch"
+        },
+        "endIndex": {
+          "type": "integer",
+          "description": "Last task index in the parallel batch"
+        },
+        "taskIndices": {
+          "type": "array",
+          "items": { "type": "integer" },
+          "description": "All task indices in this parallel batch"
+        },
+        "isParallel": {
+          "type": "boolean",
+          "description": "Whether this batch is currently executing in parallel"
+        }
+      },
+      "required": ["startIndex", "endIndex", "taskIndices", "isParallel"]
+    },
+    "taskResults": {
+      "type": "object",
+      "description": "Results keyed by task index. Tracks status and errors for completed/failed tasks.",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["pending", "success", "failed"],
+            "description": "Task completion status"
+          },
+          "error": {
+            "type": "string",
+            "description": "Error description if task failed"
+          }
+        },
+        "required": ["status"]
+      }
+    }
+  },
+  "additionalProperties": false
+}
