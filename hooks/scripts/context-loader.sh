@@ -20,15 +20,28 @@ if [ -z "$CWD" ]; then
     exit 0
 fi
 
-# Default project root
-PROJECT_ROOT="${HOME}/spec-drive-projects"
+# Default project root (overridable via config)
+CONFIG_FILE="${HOME}/.spec-drive-config.json"
+if [ -f "$CONFIG_FILE" ] && jq empty "$CONFIG_FILE" 2>/dev/null; then
+    PROJECT_ROOT=$(jq -r '.projectRoot // "'"${HOME}/spec-drive-projects"'"' "$CONFIG_FILE" 2>/dev/null || echo "${HOME}/spec-drive-projects")
+else
+    PROJECT_ROOT="${HOME}/spec-drive-projects"
+fi
 
 # --- Project Discovery (same as stop-watcher) ---
 SPEC_PATH=""
 STATE_FILE=""
 
-if [ -f "$CWD/spec/.spec-drive-state.json" ]; then
+# Check if cwd IS the spec dir
+if [ -f "$CWD/.spec-drive-state.json" ]; then
+    SPEC_PATH="$CWD"
+    STATE_FILE="$SPEC_PATH/.spec-drive-state.json"
+elif [ -f "$CWD/spec/.spec-drive-state.json" ]; then
     SPEC_PATH="$CWD/spec"
+    STATE_FILE="$SPEC_PATH/.spec-drive-state.json"
+# Check parent dir (user might be in spec/ subdir)
+elif [ -f "$(dirname "$CWD")/spec/.spec-drive-state.json" ] 2>/dev/null; then
+    SPEC_PATH="$(dirname "$CWD")/spec"
     STATE_FILE="$SPEC_PATH/.spec-drive-state.json"
 elif [ -d "$PROJECT_ROOT" ]; then
     # Find any project with a state file (not just execution phase)
@@ -97,8 +110,9 @@ fi
 # --- Output Original Goal from .progress.md ---
 PROGRESS_FILE="$SPEC_PATH/.progress.md"
 if [ -f "$PROGRESS_FILE" ]; then
-    GOAL=$(grep -A1 "^## Original Goal" "$PROGRESS_FILE" 2>/dev/null | tail -1)
-    if [ -n "$GOAL" ] && [ "$GOAL" != "## Original Goal" ]; then
+    # Extract goal: first non-empty line after "## Original Goal"
+    GOAL=$(awk '/^## Original Goal/{found=1; next} found && /^[^ \t#]/{print; exit} found && /^## /{exit}' "$PROGRESS_FILE" 2>/dev/null || true)
+    if [ -n "$GOAL" ]; then
         echo "[spec-drive] Goal: $GOAL" >&2
     fi
 fi

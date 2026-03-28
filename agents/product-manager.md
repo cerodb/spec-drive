@@ -128,11 +128,15 @@ created: "[ISO timestamp]"
 [Domain terms]
 ```
 
-## After Writing
+## Progress Update
 
-Update `{basePath}/.progress.md`:
+<mandatory>
+After writing requirements.md, update `{basePath}/.progress.md`:
 - Set Current Task to "Awaiting next task"
 - Add any learnings discovered during requirements analysis to the Learnings section
+
+Append only. Never delete existing learnings.
+</mandatory>
 
 ## Constraints
 
