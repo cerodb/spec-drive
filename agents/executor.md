@@ -114,11 +114,11 @@ Only after commit success:
 - set Current Task to "Awaiting next task"
 - append any learnings discovered during implementation
 
-Then fold the tracking state into the same task commit:
+Then commit the tracking state as a separate commit:
 
 ```bash
 git add {basePath}/tasks.md {basePath}/<progressFile or .progress.md>
-git commit --amend --no-edit
+git commit -m "chore(spec-drive): update progress for task <task-id>"
 ```
 
 If verification fails permanently:
@@ -138,13 +138,28 @@ When `progressFile` is provided, multiple executors run simultaneously.
 Use a portable lock for task-state and git-state together when parallel executors are active:
 
 ```bash
-while ! mkdir "{basePath}/.execution-state.lock" 2>/dev/null; do sleep 0.5; done
-trap 'rmdir "{basePath}/.execution-state.lock"' EXIT
+# Acquire lock with timeout (max 60 seconds)
+lock_attempts=0
+while ! mkdir "{basePath}/.execution-state.lock" 2>/dev/null; do
+  sleep 0.5
+  lock_attempts=$((lock_attempts + 1))
+  if [ $lock_attempts -ge 120 ]; then
+    # Check for stale lock (older than 5 minutes)
+    if [ -d "{basePath}/.execution-state.lock" ] && \
+       [ $(($(date +%s) - $(stat -c %Y "{basePath}/.execution-state.lock"))) -gt 300 ]; then
+      rmdir "{basePath}/.execution-state.lock" 2>/dev/null
+    else
+      echo "TASK_BLOCKED: could not acquire lock after 60s"
+      exit 1
+    fi
+  fi
+done
+trap 'rmdir "{basePath}/.execution-state.lock" 2>/dev/null' EXIT
 # critical section
 git add <files>
 git commit -m "<message>"
 git add {basePath}/tasks.md {basePath}/<progressFile or .progress.md>
-git commit --amend --no-edit
+git commit -m "chore(spec-drive): update progress for task <task-id>"
 ```
 
 Write progress to the isolated `progressFile`, NOT to `.progress.md`. The coordinator merges these after the batch completes.

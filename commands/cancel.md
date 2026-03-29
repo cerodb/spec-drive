@@ -31,8 +31,9 @@ Read `.spec-drive-state.json` to get the project name and basePath for confirmat
 
 Resolve and validate:
 - `projectDir` = parent directory of `basePath`
-- approved root = `~/spec-drive-projects/` or configured `projectRoot`
-- refuse deletion if `projectDir` is empty, `/`, `$HOME`, or outside the approved root
+- Resolve symlinks: `projectDir="$(readlink -f "$projectDir")"`
+- approved root = resolve `~/spec-drive-projects/` (or configured `projectRoot`) with `readlink -f`
+- refuse if `projectDir` is empty, `/`, `$HOME`, or the resolved path is outside the resolved approved root
 
 If the resolved path fails validation:
 ```
@@ -45,7 +46,7 @@ Stop here.
 Remove `.spec-drive-state.json`:
 
 ```bash
-rm -f "{projectDir}/.spec-drive-state.json"
+rm -f "{basePath}/.spec-drive-state.json"
 ```
 
 This stops any execution loop — the stop-watcher hook checks for this file and exits if missing.

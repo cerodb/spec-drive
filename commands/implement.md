@@ -88,16 +88,21 @@ If ANY checklist item fails, stop immediately. Do NOT proceed to execution.
 If `phase` is "tasks" (first run):
 
 1. Count total tasks: count all lines matching `^- \[ \]` in tasks.md
-2. Update state:
+2. If count is 0, stop with error: "No unchecked tasks found in tasks.md. Nothing to execute."
+3. Update state:
    - `phase` = `"execution"`
    - `taskIndex` = `0`
    - `totalTasks` = counted value
    - `taskIteration` = `1`
    - `globalIteration` = `1`
    - `awaitingApproval` = `false`
-3. Write updated state to `.spec-drive-state.json`
+4. Write updated state to `.spec-drive-state.json`
 
-If `phase` is already "execution" (resuming), use existing state values.
+If `phase` is already "execution" (resuming):
+1. Recount unchecked tasks from tasks.md
+2. If the count differs from `totalTasks` in state, update `totalTasks` and warn:
+   "tasks.md was modified since last run. totalTasks updated: {old} → {new}"
+3. Use updated state values.
 
 ### Step 5: Parse Current Task
 
@@ -251,10 +256,10 @@ When `taskIndex >= totalTasks`:
    Global iterations used: {globalIteration}
    ```
 
-2. Clean up:
-   - Delete `.spec-drive-state.json` (project is done)
+2. Archive state (do NOT delete):
+   - Set `phase` to `"completed"` in `.spec-drive-state.json`
    - Remove any `.progress-task-*.md` temp files
-   - Remove `.tasks.lock` and `.git-commit.lock` if present
+   - Remove `.execution-state.lock` directory if present: `rmdir {basePath}/.execution-state.lock 2>/dev/null || true`
 
 3. Output final summary with any learnings from `.progress.md`
 

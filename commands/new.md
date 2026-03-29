@@ -20,6 +20,22 @@ Example: /spec-drive:new my-api Build a REST API for user management
 ```
 Stop and wait for user input.
 
+## Validate Project Name
+
+<mandatory>
+The project name MUST be validated before use in any path. Reject and stop if:
+- Name contains `/` or `..` (path traversal)
+- Name contains whitespace
+- Name does not match `^[a-zA-Z0-9_.-]+$`
+
+On rejection, tell the user:
+```
+Invalid project name: "<name>"
+Names must contain only letters, numbers, hyphens, underscores, and dots.
+No slashes, spaces, or path traversal (../) allowed.
+```
+</mandatory>
+
 ## Resolve Project Root
 
 Determine where projects live:

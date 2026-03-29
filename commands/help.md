@@ -55,5 +55,5 @@ QUICK START
   7. /spec-drive:implement          Execute tasks autonomously
 
   Or use --auto: /spec-drive:new my-feature --auto
-  This runs the full pipeline with approval gates between phases.
+  This runs the full pipeline automatically, bypassing approval gates between phases.
 ```

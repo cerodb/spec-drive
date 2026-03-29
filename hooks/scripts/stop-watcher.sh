@@ -27,7 +27,7 @@ TRANSCRIPT_PATH=$(echo "$INPUT" | jq -r '.transcript_path // empty' 2>/dev/null 
 # Default project root (overridable via config)
 CONFIG_FILE="${HOME}/.spec-drive-config.json"
 if [ -f "$CONFIG_FILE" ] && jq empty "$CONFIG_FILE" 2>/dev/null; then
-    PROJECT_ROOT=$(jq -r '.projectRoot // "'"${HOME}/spec-drive-projects"'"' "$CONFIG_FILE" 2>/dev/null || echo "${HOME}/spec-drive-projects")
+    PROJECT_ROOT=$(jq -r --arg default "${HOME}/spec-drive-projects" '.projectRoot // $default' "$CONFIG_FILE" 2>/dev/null || echo "${HOME}/spec-drive-projects")
 else
     PROJECT_ROOT="${HOME}/spec-drive-projects"
 fi
@@ -157,7 +157,7 @@ AWAITING=$(jq -r '.awaitingApproval // false' "$STATE_FILE")
 
 # --- Check transcript for ALL_TASKS_COMPLETE ---
 if [ -n "$TRANSCRIPT_PATH" ] && [ -f "$TRANSCRIPT_PATH" ]; then
-    if tail -100 "$TRANSCRIPT_PATH" 2>/dev/null | grep -q "ALL_TASKS_COMPLETE"; then
+    if tail -100 "$TRANSCRIPT_PATH" 2>/dev/null | grep -q "^ALL_TASKS_COMPLETE$"; then
         exit 0
     fi
 fi

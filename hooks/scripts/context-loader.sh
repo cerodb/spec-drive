@@ -23,12 +23,26 @@ fi
 # Default project root (overridable via config)
 CONFIG_FILE="${HOME}/.spec-drive-config.json"
 if [ -f "$CONFIG_FILE" ] && jq empty "$CONFIG_FILE" 2>/dev/null; then
-    PROJECT_ROOT=$(jq -r '.projectRoot // "'"${HOME}/spec-drive-projects"'"' "$CONFIG_FILE" 2>/dev/null || echo "${HOME}/spec-drive-projects")
+    PROJECT_ROOT=$(jq -r --arg default "${HOME}/spec-drive-projects" '.projectRoot // $default' "$CONFIG_FILE" 2>/dev/null || echo "${HOME}/spec-drive-projects")
 else
     PROJECT_ROOT="${HOME}/spec-drive-projects"
 fi
 
-# --- Project Discovery (same as stop-watcher) ---
+PROJECT_ROOT_REAL="$(readlink -f "$PROJECT_ROOT" 2>/dev/null || echo "$PROJECT_ROOT")"
+
+is_safe_spec_path() {
+    local candidate="$1"
+    [ -n "$candidate" ] || return 1
+    [ -d "$candidate" ] || return 1
+    local resolved
+    resolved="$(readlink -f "$candidate" 2>/dev/null || echo "$candidate")"
+    case "$resolved" in
+        "$PROJECT_ROOT_REAL"/*/spec) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+# --- Project Discovery (same guards as stop-watcher) ---
 SPEC_PATH=""
 STATE_FILE=""
 
@@ -44,15 +58,26 @@ elif [ -f "$(dirname "$CWD")/spec/.spec-drive-state.json" ] 2>/dev/null; then
     SPEC_PATH="$(dirname "$CWD")/spec"
     STATE_FILE="$SPEC_PATH/.spec-drive-state.json"
 elif [ -d "$PROJECT_ROOT" ]; then
-    # Find any project with a state file (not just execution phase)
+    # Find projects with state files — detect ambiguity
+    MATCHES=()
     for dir in "$PROJECT_ROOT"/*/spec; do
         state="$dir/.spec-drive-state.json"
-        if [ -f "$state" ] && jq empty "$state" 2>/dev/null; then
-            SPEC_PATH="$dir"
-            STATE_FILE="$state"
-            break
+        if is_safe_spec_path "$dir" && [ -f "$state" ] && jq empty "$state" 2>/dev/null; then
+            MATCHES+=("$dir")
         fi
     done
+
+    if [ "${#MATCHES[@]}" -eq 1 ]; then
+        SPEC_PATH="${MATCHES[0]}"
+        STATE_FILE="$SPEC_PATH/.spec-drive-state.json"
+    elif [ "${#MATCHES[@]}" -gt 1 ]; then
+        echo "[spec-drive] WARNING: Multiple active projects found. Use cwd inside a specific project." >&2
+        for m in "${MATCHES[@]}"; do
+            local_name=$(jq -r '.name // "unknown"' "$m/.spec-drive-state.json" 2>/dev/null || echo "unknown")
+            echo "[spec-drive]   - $local_name ($m)" >&2
+        done
+        exit 0
+    fi
 fi
 
 # No active project found
