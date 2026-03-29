@@ -32,6 +32,16 @@ Do not infer a pass from intent, prior discussion, or probable correctness.
 
 ## Execution
 
+### Step 0: Validate inputs
+
+Before verifying anything:
+- confirm `basePath` exists and is readable
+- confirm the task block contains at least one Verify command
+- if AC references are present, confirm `requirements.md` exists and is readable
+- if `.progress.md` does not exist yet, create it before writing retry context
+
+If a mandatory input is missing, fail explicitly. Do not vacuously pass.
+
 ### Step 1: Run Verification Commands
 
 Execute each Verify command from the task block:
@@ -41,7 +51,13 @@ Execute each Verify command from the task block:
 <verify command from task>
 ```
 
-Record: exit code, stdout, stderr. A non-zero exit code is an immediate FAIL unless the task expects failure output.
+Record: exit code, stdout, stderr.
+
+Expected exit-code rule:
+- exit code `0` is required unless the task explicitly expects a specific non-zero code
+- if a non-zero code is expected, the actual code must match exactly
+
+Run commands with bounded execution. Do not let a verify command hang indefinitely.
 
 ### Step 2: Check Acceptance Criteria
 
@@ -53,6 +69,8 @@ For each AC-X.Y referenced in the task's requirements trace:
 
 Do NOT skip this step even if the Verify command passed. Verify commands check mechanics; AC checks verify intent.
 
+If an AC cannot be verified from command output alone, inspect the relevant implementation files and explain the evidence used.
+
 ### Step 3: Detect Mock-Only Anti-Patterns
 
 <mandatory>
@@ -63,6 +81,8 @@ Scan test files touched by the preceding tasks for these anti-patterns:
 - **No integration path**: all tests mock external boundaries with zero integration or e2e coverage
 - **Snapshot-only validation**: tests only assert against snapshots with no behavioral assertions
 - **Happy-path-only**: no error case or edge case tests exist
+
+If the touched test files cannot be determined from the task block, progress context, or local diff, report that limitation explicitly instead of pretending the scan was complete.
 
 Report each detected anti-pattern with file path and line range.
 </mandatory>
@@ -76,6 +96,8 @@ If the task specifies a BEFORE/AFTER check (e.g., "verify file X changed from A 
 3. Flag if the change is missing or incorrect
 
 Skip this step if the task has no before/after requirement.
+
+If a diff baseline is needed and none is specified, say so explicitly instead of guessing the wrong comparison point.
 
 ## Output
 
@@ -113,6 +135,8 @@ VERIFICATION_FAIL
 ```
 
 Include ALL failures, not just the first one. The executor needs the full picture to fix everything in one pass.
+
+Do NOT use the strings `VERIFICATION_PASS` or `VERIFICATION_FAIL` anywhere except as the final signal line.
 </mandatory>
 
 ## Failure Context for Retries
@@ -144,18 +168,19 @@ On VERIFICATION_FAIL:
 - Add failure details to Learnings (as described in Failure Context above)
 - Set Current Task to the failed task description for retry context
 
-Append only. Never delete existing learnings.
+Append only for learnings. If `Current Task` already exists, replace that line instead of duplicating it.
 </mandatory>
 
 ## Constraints
 
 <mandatory>
 - NEVER fabricate test results. Run the actual commands.
-- NEVER pass a verification that has failing commands. Exit code 0 is required.
+- NEVER pass a verification that has unexpected failing commands. Exit code `0` is required unless the task explicitly expects a specific non-zero code.
 - NEVER skip the mock anti-pattern scan for tasks that include test files.
 - NEVER output both VERIFICATION_PASS and VERIFICATION_FAIL. Exactly one.
 - Be specific in failure reports: file paths, line numbers, exact error messages.
 - Output MUST contain EXACTLY one of: VERIFICATION_PASS or VERIFICATION_FAIL. No other completion signals.
+- Include the exact failing or reproduction command on failure.
 </mandatory>
 
 ## Cross-CLI Portability

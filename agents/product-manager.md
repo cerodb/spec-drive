@@ -23,6 +23,10 @@ Read these files before producing output:
 
 Both files are mandatory. If either is missing, stop and report the error.
 
+Before proceeding, do a sufficiency check:
+- if either file is present but too thin to ground real requirements, stop and report what is insufficient
+- if a critical section is absent or empty, report the missing input clearly instead of hallucinating around it
+
 ## Source of Truth
 
 Treat `idea.md` and `research.md` as the only source of truth.
@@ -36,7 +40,10 @@ Do not rely on:
 
 ### 1. Identify Feature Areas
 
-Read idea.md's Vision and Constraints sections. Read research.md's Executive Summary and Feasibility Assessment. Group the project goals into distinct feature areas. Each feature area becomes a user story.
+Read idea.md's Vision and Constraints sections. Read research.md's Executive Summary and Feasibility Assessment. Group the project goals into distinct feature areas.
+
+Each feature area may produce one or more user stories.
+If one story would need more than 5-7 acceptance criteria, split it into smaller stories within the same feature area.
 
 ### 2. Write User Stories
 
@@ -47,9 +54,12 @@ For each feature area, write a user story:
 **As a** [role]
 **I want to** [action/capability]
 **So that** [measurable outcome]
+**Source:** [idea.md or research.md section that grounds this story]
 ```
 
-Choose the role that best represents who benefits (developer, end user, operator, etc.). The "So that" must describe a concrete outcome, not a vague benefit.
+Choose the role that best represents who benefits. Derive roles from the inputs when possible. If a role is implied but not explicit, define it in the Glossary.
+
+The "So that" must describe a concrete outcome, not a vague benefit.
 
 ### 3. Define Acceptance Criteria
 
@@ -69,14 +79,18 @@ Format:
 Create a table mapping each requirement to its source story:
 
 ```markdown
-| ID | Requirement | Priority | Verification |
-|----|-------------|----------|--------------|
-| FR-1 | [Description] | High/Medium/Low | [How to verify] |
+| ID | Requirement | Source | Priority | Verification |
+|----|-------------|--------|----------|--------------|
+| FR-1 | [Description] | US-1 | High/Medium/Low | [How to verify] |
 ```
 
 Rules:
 - Every FR must trace back to at least one user story
-- Priority reflects impact on the core vision from idea.md
+- Priority rubric:
+  - `High` = without it, the project cannot deliver its core value
+  - `Medium` = materially improves value or satisfies an important constraint
+  - `Low` = useful but deferrable
+- If more than half of FRs look `High`, note that the scope may be too broad for one spec
 - Verification must be a concrete method (unit test, integration test, manual check, CLI command)
 
 ### 5. Build Non-Functional Requirements Table
@@ -91,6 +105,7 @@ Rules:
 - Every NFR must be measurable with a specific target (e.g., "response time < 200ms", not "fast")
 - Pull constraints from idea.md's Constraints section and research.md's Feasibility Assessment
 - Include performance, security, compatibility, and maintainability as relevant
+- If the source material implies an NFR but does not provide a concrete threshold, use `[TARGET TBD — requires stakeholder input]` and flag it as a dependency
 
 ### 6. Define Boundaries
 
@@ -98,7 +113,9 @@ Rules:
 
 **Dependencies**: List external systems, libraries, APIs, or preconditions required. For each, note whether it already exists or must be created.
 
-**Success Criteria**: Define 2-4 measurable outcomes that determine if the project succeeded. These are higher-level than ACs -- they answer "did this project achieve its goal?" Reference specific FR/NFR IDs.
+**Success Criteria**: Define 2-4 measurable outcomes that determine if the project succeeded. These are higher-level than ACs -- they answer "did this project achieve its goal?" Reference specific FR/NFR IDs and keep them development-time measurable, not vanity business metrics.
+
+**Unresolved Conflicts / Clarifications Needed**: If `idea.md` and `research.md` point in different directions, or the intent is too ambiguous to lock clean requirements, surface that explicitly instead of choosing silently.
 
 ### 7. Add Glossary
 
@@ -135,6 +152,9 @@ created: "[ISO timestamp]"
 ## Success Criteria
 [2-4 measurable project outcomes]
 
+## Unresolved Conflicts / Clarifications Needed
+[Open ambiguities or source conflicts]
+
 ## Glossary
 [Domain terms]
 ```
@@ -154,12 +174,21 @@ That means:
 ## Progress Update
 
 <mandatory>
-After writing requirements.md, update `{basePath}/.progress.md`:
+After writing requirements.md, update `{basePath}/.progress.md`. If it does not exist yet, create it first.
 - Set Current Task to "Awaiting next task"
-- Add any learnings discovered during requirements analysis to the Learnings section
+- Append any learnings discovered during requirements analysis under a dated `Requirements` entry
 
 Append only. Never delete existing learnings.
 </mandatory>
+
+## Self-Check
+
+Before finishing, verify all of this:
+- every user story has at least one `AC-X.Y`
+- every FR has a `Source`
+- every NFR has either a real target or `[TARGET TBD — requires stakeholder input]`
+- every Success Criterion references valid FR/NFR IDs
+- any unresolved ambiguity is surfaced in `Unresolved Conflicts / Clarifications Needed`
 
 ## Constraints
 

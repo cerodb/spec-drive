@@ -11,6 +11,7 @@ Your plan must be executable by another CLI with minimal ambiguity.
 ## When Invoked
 
 You receive a `basePath` pointing to a project's spec directory (e.g., `~/spec-drive-projects/my-project/spec/`).
+Derive `repoRoot` from the surrounding project and make that path basis explicit in the output.
 
 ## Input
 
@@ -36,6 +37,7 @@ Do not rely on hidden operator intent or unstated repo conventions.
 - Map each AC to the component(s) that satisfy it
 - Identify dependencies between components (what must exist before what)
 - Group independent components as parallelizable
+- Resolve `repoRoot` and plan all file paths relative to it
 
 ### Step 2: Decompose into POC-first phases
 
@@ -74,11 +76,20 @@ Markers:
 - `[VERIFY]` -- quality checkpoint that validates preceding tasks. Uses `V#` numbering (V1, V2...).
 - No marker -- task is sequential (depends on previous task completing)
 
+Verify command guidance by phase:
+- Phase 1: verify by running the artifact or observable workflow end-to-end, not by placeholder tests
+- Phase 2: verify refactors preserve working behavior
+- Phase 3: use the real test runner from `research.md`
+- Phase 4: use the real lint/typecheck/build commands from `research.md`
+- Phase 5: verify PR/CI state with the actual repo tooling
+
 ### Step 4: Place checkpoints
 
 <mandatory>
 Insert a `[VERIFY]` checkpoint task every 2-3 implementation tasks and at every phase boundary. Checkpoints validate that the preceding batch of work is correct before continuing. A checkpoint's Verify command must test ALL preceding unchecked tasks in that batch.
 </mandatory>
+
+If a checkpoint would need multiple commands, use a multi-line shell block or script path. Do not fake a one-liner that proves nothing.
 
 ### Step 5: Mark parallel tasks
 
@@ -86,7 +97,10 @@ Tasks that modify different files with no shared dependencies get `[P]`. Adjacen
 
 ### Step 6: Validate coverage
 
-Cross-reference: every AC-X.Y from requirements.md must appear in at least one task's requirements trace. Add a comment at the end of tasks.md listing any uncovered ACs (there should be none).
+Cross-reference: every AC-X.Y from requirements.md must appear in at least one task's requirements trace.
+Emit a `## Coverage Matrix` section mapping every AC to one or more task IDs.
+
+If a verify or quality command cannot be grounded in `research.md`, do not guess. Mark the task as unresolved in the task body and make the Verify command fail loudly with a clear message until the tooling decision is resolved.
 
 ## Output
 
@@ -97,6 +111,7 @@ Write `basePath/tasks.md` with this structure:
 spec: "<spec-name>"
 phase: tasks
 created: "<ISO-8601>"
+repoRoot: "<repo root relative to or above basePath>"
 ---
 
 # Tasks: <Spec Title>
@@ -118,6 +133,11 @@ created: "<ISO-8601>"
 
 ## Phase 4: Quality Gates
 ...
+
+## Coverage Matrix
+| AC / NFR | Task IDs |
+|----------|----------|
+| AC-1.1 | 1.1, 3.2 |
 ```
 
 Task numbering: `<phase>.<sequence>` (1.1, 1.2, ... 2.1, 2.2, ...).
@@ -139,11 +159,14 @@ That means:
 After writing tasks.md, update `basePath/.progress.md`:
 - Add task count and phase summary to Learnings
 - Set Next to "Awaiting approval for execution phase"
+- If `.progress.md` does not exist yet, create it first
 
 <mandatory>
 Every task MUST have a Verify command. No exceptions. The Verify command must be a runnable shell command that exits 0 on success and non-zero on failure.
 
 [VERIFY] checkpoint tasks MUST appear at phase boundaries. They validate that all preceding work in the batch is correct.
+
+If a `[VERIFY]` checkpoint fails, the executor must stop after that checkpoint and not continue to later tasks until the failure is resolved.
 
 Tasks must follow POC-first ordering: make it work first, clean up second, test third, validate last. Never put tests in Phase 1 or refactoring in Phase 3.
 

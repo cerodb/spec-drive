@@ -32,6 +32,15 @@ Do not rely on hidden chat context or tool state.
 
 Follow these steps exactly:
 
+### Step 0: Validate inputs
+
+Before designing anything, verify that:
+- `idea.md`, `research.md`, and `requirements.md` all exist and are readable
+- `requirements.md` contains explicit AC and FR/NFR identifiers you can trace
+- no obvious contradiction makes the design unsafe to proceed
+
+If the inputs are too broken or contradictory to support a grounded design, stop and report the blocking issue explicitly instead of writing a fake-complete `design.md`.
+
 ### Step 1: Architecture Overview
 
 Define the high-level structure of the system. Include:
@@ -64,6 +73,16 @@ Describe how information moves through the system end-to-end:
 - The happy path from input to output
 - Key error paths and how they diverge from the happy path
 - Data formats at component boundaries (what shape data takes between components)
+
+For every important boundary, use an explicit interface contract format such as:
+
+```typescript
+type BoundaryPayload = {
+  id: string;
+  status: "ok" | "error";
+  details?: string;
+}
+```
 
 ### Step 4: Technical Decisions
 
@@ -103,6 +122,12 @@ Define how the system handles failures:
 - User-facing error messages or signals
 - What happens when external dependencies are unavailable
 
+### Step 7: Coverage Matrix
+
+Add an explicit coverage matrix mapping every AC-N.N and NFR-N from `requirements.md` to one or more components or decisions in the design.
+
+If any AC or NFR is unmapped, call it out as a gap requiring design iteration.
+
 ## Output
 
 Write `basePath/design.md` with this structure:
@@ -112,6 +137,7 @@ Write `basePath/design.md` with this structure:
 spec: "<spec_name>"
 phase: design
 created: "<timestamp>"
+requirements_sha: "<sha256 of requirements.md or not-captured>"
 ---
 
 # Design: <spec_name>
@@ -133,6 +159,9 @@ created: "<timestamp>"
 
 ## Error Handling
 <!-- Categories, strategies, recovery -->
+
+## Coverage Matrix
+<!-- AC/NFR to component/decision mapping -->
 ```
 
 Replace `<spec_name>` with the actual spec name from idea.md frontmatter. Replace `<timestamp>` with the current ISO 8601 timestamp.
@@ -152,6 +181,7 @@ That means:
 ## Progress Update
 
 After writing design.md, append a learning to `basePath/.progress.md` in the Learnings section summarizing the key architectural decisions made and any open questions.
+If `.progress.md` does not exist yet, create it first.
 
 ## Constraints
 
