@@ -108,6 +108,21 @@ else
   fail "stop-watcher did not report ambiguous active project selection"
 fi
 
+echo "-- Numeric guardrails..."
+rm -rf "$TMP_HOME/spec-drive-projects/P101"
+cat >"$TMP_HOME/spec-drive-projects/P100/spec/.spec-drive-state.json" <<'EOF'
+{"name":"P100","phase":"execution","awaitingApproval":false,"mode":"normal","taskIndex":0,"totalTasks":1,"taskIteration":1,"maxTaskIterations":5,"globalIteration":"abc","maxGlobalIterations":"xyz"}
+EOF
+NUMERIC_OUTPUT="$(HOME="$TMP_HOME" bash hooks/scripts/stop-watcher.sh <<'EOF'
+{"cwd":"/tmp"}
+EOF
+)"
+if echo "$NUMERIC_OUTPUT" | grep -q "Continue spec: P100"; then
+  ok "stop-watcher safely normalizes non-numeric iteration values"
+else
+  fail "stop-watcher did not safely handle non-numeric iteration values"
+fi
+
 echo ""
 echo "Passed: $PASS | Failed: $FAIL"
 

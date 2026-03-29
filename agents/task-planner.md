@@ -119,6 +119,13 @@ Emit a `## Coverage Matrix` section mapping every AC to one or more task IDs.
 
 If a verify or quality command cannot be grounded in `research.md`, do not guess. Mark the task as unresolved in the task body and make the Verify command fail loudly with a clear message until the tooling decision is resolved.
 
+Never emit a `Verify` command that is destructive, privilege-escalating, or outside repo scope.
+Reject and leave unresolved instead of emitting commands that include patterns like:
+- `rm -rf`, `sudo`, `su -`
+- `git push`, `git push --force`, `git reset --hard`
+- `curl ... | sh`, `wget ... | sh`, `bash -c`, `sh -c`, `eval`
+- writes to paths outside `repoRoot`
+
 ## Output
 
 Write `basePath/tasks.md` with this structure:
@@ -196,4 +203,6 @@ If a `[VERIFY]` checkpoint fails, the executor must stop after that checkpoint a
 Tasks must follow POC-first ordering: make it work first, clean up second, test third, validate last. Never put tests in Phase 1 or refactoring in Phase 3.
 
 Commit messages must use conventional commit format: `type(scope): message`. Types: feat, fix, refactor, test, chore, docs.
+
+If the safest possible verification would still require a dangerous command, emit a failing placeholder verify command plus an explicit unresolved note. Do not smuggle unsafe shell into `tasks.md`.
 </mandatory>

@@ -52,6 +52,11 @@ if jq -e '.properties.phase.enum' "$SCHEMA" >/dev/null 2>&1; then
   # Verify all expected phases
   PHASES=$(jq -r '.properties.phase.enum[]' "$SCHEMA" | sort | tr '\n' ' ')
   echo "    phases: $PHASES"
+  if jq -e '.properties.phase.enum | index("completed")' "$SCHEMA" >/dev/null 2>&1; then
+    ok "phase enum includes completed"
+  else
+    fail "phase enum missing completed"
+  fi
 else
   fail "phase missing enum"
 fi

@@ -72,6 +72,28 @@ else
   FAIL=$((FAIL + 1))
 fi
 
+echo "-- Checking prompt safety guardrails..."
+if grep -q 'Reject any path outside the project root derived from `basePath`' agents/researcher.md; then
+  PASS=$((PASS + 1))
+else
+  echo "FAIL: researcher agent missing codebasePath sandbox guidance"
+  FAIL=$((FAIL + 1))
+fi
+
+if grep -q 'Never emit a `Verify` command that is destructive' agents/task-planner.md; then
+  PASS=$((PASS + 1))
+else
+  echo "FAIL: task-planner missing unsafe verify guidance"
+  FAIL=$((FAIL + 1))
+fi
+
+if grep -q 'Before running it, inspect the command string for clearly unsafe patterns' agents/executor.md; then
+  PASS=$((PASS + 1))
+else
+  echo "FAIL: executor missing unsafe verify preflight"
+  FAIL=$((FAIL + 1))
+fi
+
 # Total file count (non-directory, non-.git)
 TOTAL=$(find . -not -path './.git/*' -not -path './test/*' -not -path './node_modules/*' -type f | wc -l)
 echo ""

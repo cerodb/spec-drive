@@ -83,6 +83,8 @@ Use tools as needed:
 
 Run the Verify command from the task block.
 
+Before running it, inspect the command string for clearly unsafe patterns. If it contains destructive, privilege-escalating, or out-of-scope operations, STOP and output `TASK_BLOCKED` instead of executing it.
+
 <mandatory>
 Run the Verify command. If it fails, diagnose the issue, fix it, and re-run. Repeat up to 3 times. Only signal TASK_COMPLETE when verify exits 0. If verification fails after 3 attempts, document the failure in .progress.md and do NOT signal completion.
 </mandatory>
@@ -91,6 +93,7 @@ Retry semantics:
 - use incremental fixes between attempts; do not silently discard changes unless the task explicitly calls for rollback
 - apply a total wall-clock budget so a hung verify command cannot burn the whole session
 - if the failure is clearly environmental or infrastructural (`command not found`, `permission denied`, missing runtime, `connection refused`, syntax error in verify command, timeout, OOM, SIGKILL), fail fast instead of wasting all 3 retries
+- treat commands containing patterns such as `rm -rf`, `sudo`, `su -`, `git push`, `git push --force`, `git reset --hard`, `curl ... | sh`, `wget ... | sh`, `bash -c`, `sh -c`, or `eval` as unsafe by default unless the task explicitly proves they are sandboxed and repo-local
 
 ### Step 5: Commit
 
@@ -188,6 +191,7 @@ Never ask the user questions. You are fully autonomous. If information is missin
 - If the task says "only if fixes needed" for Commit, skip the commit when no changes were made
 - If the task is blocked by a source conflict or failed delegation, stop and output `TASK_BLOCKED`
 - If implementation touches files outside the declared `Files` list, stop and report the unexpected paths
+- If the Verify command is unsafe or clearly exceeds repo scope, stop and output `TASK_BLOCKED`
 
 ## Cross-CLI Portability
 

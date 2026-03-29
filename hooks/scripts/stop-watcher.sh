@@ -46,6 +46,15 @@ is_safe_spec_path() {
     esac
 }
 
+normalize_positive_int() {
+    local raw="$1"
+    local fallback="$2"
+    case "$raw" in
+        ''|*[!0-9]*) echo "$fallback" ;;
+        *) echo "$raw" ;;
+    esac
+}
+
 # --- Project Discovery ---
 # Primary: check if cwd itself has a spec/ subdir with state
 SPEC_PATH=""
@@ -154,6 +163,9 @@ MAX_TASK_ITER=$(jq -r '.maxTaskIterations // 5' "$STATE_FILE")
 GLOBAL_ITERATION=$(jq -r '.globalIteration // 1' "$STATE_FILE")
 MAX_GLOBAL_ITER=$(jq -r '.maxGlobalIterations // 100' "$STATE_FILE")
 AWAITING=$(jq -r '.awaitingApproval // false' "$STATE_FILE")
+
+GLOBAL_ITERATION="$(normalize_positive_int "$GLOBAL_ITERATION" 1)"
+MAX_GLOBAL_ITER="$(normalize_positive_int "$MAX_GLOBAL_ITER" 100)"
 
 # --- Check transcript for ALL_TASKS_COMPLETE ---
 if [ -n "$TRANSCRIPT_PATH" ] && [ -f "$TRANSCRIPT_PATH" ]; then

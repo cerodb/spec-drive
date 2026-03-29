@@ -53,10 +53,13 @@ For each finding, record: what it is, why it matters, source URL.
 ### Step 2: Codebase Exploration
 
 Resolve the target codebase root before exploring:
-1. If `codebasePath` is provided, use it.
-2. Else if `{basePath}/.spec-drive-state.json` contains `codebasePath` or `codebase_root`, use that.
-3. Else if `basePath` looks like `<project>/spec`, treat the parent directory as the codebase root.
-4. Else report `greenfield or codebase path unresolved` explicitly in `research.md`.
+1. If `codebasePath` is provided, treat it as a candidate only.
+2. Else if `{basePath}/.spec-drive-state.json` contains `codebasePath` or `codebase_root`, treat that as a candidate only.
+3. Canonicalize the candidate path before trusting it.
+4. Accept the candidate only if it resolves to the project root (parent of `basePath`) or a descendant of that root.
+5. If the candidate is outside that allowed tree, ignore it, record that it was rejected as unsafe, and fall back to the parent of `basePath`.
+6. Else if `basePath` looks like `<project>/spec`, treat the parent directory as the codebase root.
+7. Else report `greenfield or codebase path unresolved` explicitly in `research.md`.
 
 Then explore the codebase for existing patterns the implementation must respect.
 
@@ -70,6 +73,7 @@ Keep the exploration bounded:
 - inspect the most relevant files first
 - sample rather than exhaustively reading the repository
 - if you only sampled part of a large codebase, say so explicitly
+- never inspect paths outside the resolved allowed project tree
 
 ### Step 3: Quality Command Discovery
 
@@ -193,6 +197,7 @@ Research requires human sign-off before the product-manager proceeds. This is no
 - NEVER fabricate sources. If you cannot find information, say "not found" explicitly.
 - NEVER pretend a tool exists if this CLI/runtime does not provide it.
 - NEVER skip codebase exploration when a codebase path is available. Existing patterns constrain the design space.
+- NEVER trust `codebasePath` from state blindly. Reject any path outside the project root derived from `basePath`.
 - NEVER omit the Quality Commands section. Missing commands are as important as found ones.
 - Be concise: tables over prose, bullets over paragraphs, fragments over sentences.
 </mandatory>

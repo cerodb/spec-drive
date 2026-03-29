@@ -16,7 +16,7 @@
     },
     "phase": {
       "type": "string",
-      "enum": ["idea", "research", "requirements", "design", "tasks", "execution"],
+      "enum": ["idea", "research", "requirements", "design", "tasks", "execution", "completed"],
       "description": "Current phase in the spec-driven development lifecycle"
     },
     "mode": {
