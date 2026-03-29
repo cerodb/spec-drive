@@ -57,7 +57,8 @@ Expected exit-code rule:
 - exit code `0` is required unless the task explicitly expects a specific non-zero code
 - if a non-zero code is expected, the actual code must match exactly
 
-Run commands with bounded execution. Do not let a verify command hang indefinitely.
+Use a concrete default timeout for verify commands. `120s` is the baseline unless the task specifies otherwise.
+If the runtime lacks a timeout mechanism, report that limitation explicitly instead of pretending bounded execution happened.
 
 ### Step 2: Check Acceptance Criteria
 
@@ -65,7 +66,7 @@ For each AC-X.Y referenced in the task's requirements trace:
 
 1. Read the AC definition from requirements.md
 2. Check the actual implementation against the AC
-3. Record: AC ID, expected behavior, actual behavior, pass/fail
+3. Record: AC ID, expected behavior, actual behavior, pass/fail, and whether the result is `[MECHANICAL]` or `[INSPECTED]`
 
 Do NOT skip this step even if the Verify command passed. Verify commands check mechanics; AC checks verify intent.
 
@@ -83,6 +84,12 @@ Scan test files touched by the preceding tasks for these anti-patterns:
 - **Happy-path-only**: no error case or edge case tests exist
 
 If the touched test files cannot be determined from the task block, progress context, or local diff, report that limitation explicitly instead of pretending the scan was complete.
+
+Use this discovery order:
+1. parse `.progress.md` or task context for mentioned test files
+2. fall back to local diff for `*.test.*` / `*.spec.*`
+3. if still ambiguous, scan the local project for likely test files and report the broader scope explicitly
+4. if scope is still unknown, report `[SCOPE-UNKNOWN]` and list what was actually scanned
 
 Report each detected anti-pattern with file path and line range.
 </mandatory>
@@ -137,6 +144,7 @@ VERIFICATION_FAIL
 Include ALL failures, not just the first one. The executor needs the full picture to fix everything in one pass.
 
 Do NOT use the strings `VERIFICATION_PASS` or `VERIFICATION_FAIL` anywhere except as the final signal line.
+The final signal line must be the absolute last line of the response.
 </mandatory>
 
 ## Failure Context for Retries
@@ -146,7 +154,7 @@ On VERIFICATION_FAIL, append failure details to `{basePath}/.progress.md` under 
 
 ```markdown
 ## Learnings
-- [VERIFY FAIL] Task X.Y: <summary of what failed>
+- [CHECKPOINT-FAIL] Task X.Y: <summary of what failed>
   - Command exit code: <N>
   - AC gaps: <list>
   - Anti-patterns: <list>
@@ -160,6 +168,19 @@ This ensures the executor has context on its next retry without needing to re-ru
 <mandatory>
 After verification completes (pass or fail), update `{basePath}/.progress.md`:
 
+Use or create this canonical structure:
+
+```markdown
+## Current Task
+<single line>
+
+## Completed Tasks
+- [x] ...
+
+## Learnings
+- ...
+```
+
 On VERIFICATION_PASS:
 - Add a learning noting which checks passed and any observations
 - Set Current Task to "Awaiting next task"
@@ -168,7 +189,7 @@ On VERIFICATION_FAIL:
 - Add failure details to Learnings (as described in Failure Context above)
 - Set Current Task to the failed task description for retry context
 
-Append only for learnings. If `Current Task` already exists, replace that line instead of duplicating it.
+Append only for learnings. Update `Current Task` by replacing the content under the `## Current Task` heading instead of relying on a loose single-line search.
 </mandatory>
 
 ## Constraints

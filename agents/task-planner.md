@@ -13,6 +13,13 @@ Your plan must be executable by another CLI with minimal ambiguity.
 You receive a `basePath` pointing to a project's spec directory (e.g., `~/spec-drive-projects/my-project/spec/`).
 Derive `repoRoot` from the surrounding project and make that path basis explicit in the output.
 
+Resolve `repoRoot` with this algorithm:
+1. walk up from `basePath` looking for `.git/`
+2. if none exists, look for a project manifest such as `package.json`, `pyproject.toml`, or `Cargo.toml`
+3. if none exists, use the parent of `basePath` as the fallback repo root
+
+Always emit a concrete `repoRoot` value. Do not write vague phrases like "the project root".
+
 ## Input
 
 Read these files from basePath:
@@ -66,8 +73,11 @@ Every task MUST follow this exact format:
 - [ ] X.Y [MARKER] Task Name
   - **Do**: Numbered steps describing exactly what to implement
   - **Files**: List of files to create or modify
+  - **Traces**: AC-1.1, FR-2, NFR-1
+  - **Cwd**: <repoRoot or explicit subpath when needed>
   - **Done when**: Observable success criteria
   - **Verify**: `shell command that proves it works` (must exit 0 on success)
+  - **Timeout**: `30s`
   - **Commit**: `type(scope): concise message`
 ```
 
@@ -83,6 +93,13 @@ Verify command guidance by phase:
 - Phase 4: use the real lint/typecheck/build commands from `research.md`
 - Phase 5: verify PR/CI state with the actual repo tooling
 
+Phase 1 verify patterns:
+- CLI tool: `node src/cli.js --help && node src/cli.js <fixture> | grep "expected"`
+- HTTP server: start it, hit a health/status endpoint, then stop it
+- Library/module: `node -e` or language equivalent that imports the module and asserts a real behavior
+- Config/data artifact: parse or validate the file with a real parser
+- Script: run with `--dry-run` or a safe fixture and grep/assert observable output
+
 ### Step 4: Place checkpoints
 
 <mandatory>
@@ -97,7 +114,7 @@ Tasks that modify different files with no shared dependencies get `[P]`. Adjacen
 
 ### Step 6: Validate coverage
 
-Cross-reference: every AC-X.Y from requirements.md must appear in at least one task's requirements trace.
+Cross-reference: every AC-X.Y from requirements.md must appear in at least one task's `Traces` field.
 Emit a `## Coverage Matrix` section mapping every AC to one or more task IDs.
 
 If a verify or quality command cannot be grounded in `research.md`, do not guess. Mark the task as unresolved in the task body and make the Verify command fail loudly with a clear message until the tooling decision is resolved.
@@ -112,6 +129,7 @@ spec: "<spec-name>"
 phase: tasks
 created: "<ISO-8601>"
 repoRoot: "<repo root relative to or above basePath>"
+shell: "bash"
 ---
 
 # Tasks: <Spec Title>
@@ -142,6 +160,8 @@ repoRoot: "<repo root relative to or above basePath>"
 
 Task numbering: `<phase>.<sequence>` (1.1, 1.2, ... 2.1, 2.2, ...).
 
+All `Verify` commands run from `repoRoot` unless a task explicitly sets `**Cwd**` to a subpath.
+
 ## Cross-CLI Portability
 
 <mandatory>
@@ -160,6 +180,11 @@ After writing tasks.md, update `basePath/.progress.md`:
 - Add task count and phase summary to Learnings
 - Set Next to "Awaiting approval for execution phase"
 - If `.progress.md` does not exist yet, create it first
+
+Also define the execution resume contract for downstream CLIs:
+- `tasks.md` checkboxes are the canonical execution state
+- `.progress.md` should record `lastCompletedTask`, `lastVerifyResult`, and `blockedReason` when known
+- if a `[VERIFY]` checkpoint fails, the next executor must resume from that checkpoint before moving forward
 
 <mandatory>
 Every task MUST have a Verify command. No exceptions. The Verify command must be a runnable shell command that exits 0 on success and non-zero on failure.

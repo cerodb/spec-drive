@@ -36,10 +36,25 @@ Follow these steps exactly:
 
 Before designing anything, verify that:
 - `idea.md`, `research.md`, and `requirements.md` all exist and are readable
-- `requirements.md` contains explicit AC and FR/NFR identifiers you can trace
-- no obvious contradiction makes the design unsafe to proceed
+- each file is non-empty and meaningfully populated
+- `requirements.md` contains at least one `AC-N.N` identifier
+- `requirements.md` contains at least one `FR-N` or `NFR-N` identifier
+- `idea.md` includes frontmatter with a spec/name identifier you can carry into `design.md`
 
-If the inputs are too broken or contradictory to support a grounded design, stop and report the blocking issue explicitly instead of writing a fake-complete `design.md`.
+If any of these checks fail, do not silently stop. Write a minimal blocked `design.md` with this frontmatter:
+
+```yaml
+---
+spec: "<spec_name or unknown>"
+phase: design
+status: blocked
+blocked_reason: "<concrete issue>"
+blocked_at: "<timestamp>"
+requirements_sha: "<sha256 or deterministic fallback>"
+---
+```
+
+Then update `.progress.md` with a blocked phase-log entry and the blocking reason.
 
 ### Step 1: Architecture Overview
 
@@ -136,8 +151,9 @@ Write `basePath/design.md` with this structure:
 ---
 spec: "<spec_name>"
 phase: design
+status: "complete" or "incomplete"
 created: "<timestamp>"
-requirements_sha: "<sha256 of requirements.md or not-captured>"
+requirements_sha: "<sha256 of requirements.md>"
 ---
 
 # Design: <spec_name>
@@ -162,9 +178,13 @@ requirements_sha: "<sha256 of requirements.md or not-captured>"
 
 ## Coverage Matrix
 <!-- AC/NFR to component/decision mapping -->
+
+## Unresolved Gaps
+<!-- Required when any AC/NFR remains unmapped -->
 ```
 
 Replace `<spec_name>` with the actual spec name from idea.md frontmatter. Replace `<timestamp>` with the current ISO 8601 timestamp.
+Compute `requirements_sha` from the current `requirements.md`. Use `sha256sum` when available. If shell access is unavailable, compute a deterministic fallback from the file contents; do not write `not-captured`.
 
 ## Cross-CLI Portability
 
@@ -176,12 +196,28 @@ That means:
 - every major choice traces to AC/NFR IDs
 - interfaces and boundaries are explicit
 - no references like "same as before" or "obvious from the code"
+- blocked or incomplete states must be visible in machine-readable frontmatter
 </mandatory>
 
 ## Progress Update
 
-After writing design.md, append a learning to `basePath/.progress.md` in the Learnings section summarizing the key architectural decisions made and any open questions.
-If `.progress.md` does not exist yet, create it first.
+After writing design.md, update `basePath/.progress.md`. If it does not exist yet, create it first.
+
+Use this canonical structure:
+
+```markdown
+## Phase Log
+| Phase | Status | Agent | Timestamp |
+|-------|--------|-------|-----------|
+| design | complete | architect | 2026-03-29T13:18:00Z |
+
+## Learnings
+- **[design]** <key architectural decision or open question>
+```
+
+Append one row to `Phase Log` and one `[design]` bullet to `Learnings`.
+If the design is blocked, use `status=blocked`.
+If any AC/NFR remains unmapped, use `status=incomplete` and list those IDs under `## Unresolved Gaps` in `design.md`.
 
 ## Constraints
 
