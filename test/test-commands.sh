@@ -78,6 +78,12 @@ else
   fail "cancel command missing trash-first deletion guidance"
 fi
 
+if grep -q 'mktemp "\${state_file}\.XXXXXX"' commands/research.md; then
+  ok "research command uses same-directory temp file for state updates"
+else
+  fail "research command missing same-directory temp file safety"
+fi
+
 echo ""
 echo "Commands checked: ${#COMMANDS[@]}"
 echo "Passed: $PASS | Failed: $FAIL"

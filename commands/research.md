@@ -77,8 +77,9 @@ Wait for the researcher agent to complete.
 Update `.spec-drive-state.json`:
 
 ```bash
-tmpfile=$(mktemp)
-jq '.phase = "research"' "$basePath/.spec-drive-state.json" > "$tmpfile" && mv "$tmpfile" "$basePath/.spec-drive-state.json"
+state_file="$basePath/.spec-drive-state.json"
+tmpfile=$(mktemp "${state_file}.XXXXXX")
+jq '.phase = "research"' "$state_file" > "$tmpfile" && mv "$tmpfile" "$state_file"
 ```
 
 Check the mode:
@@ -86,8 +87,9 @@ Check the mode:
 **Normal mode**:
 1. Set `awaitingApproval = true`:
 ```bash
-tmpfile=$(mktemp)
-jq '.awaitingApproval = true' "$basePath/.spec-drive-state.json" > "$tmpfile" && mv "$tmpfile" "$basePath/.spec-drive-state.json"
+state_file="$basePath/.spec-drive-state.json"
+tmpfile=$(mktemp "${state_file}.XXXXXX")
+jq '.awaitingApproval = true' "$state_file" > "$tmpfile" && mv "$tmpfile" "$state_file"
 ```
 2. Tell the user:
 ```

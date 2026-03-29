@@ -180,7 +180,7 @@ As your LAST action, set the state file to pause for human review:
 ```bash
 state_file="{basePath}/.spec-drive-state.json"
 [ -f "$state_file" ] || printf '{}\n' > "$state_file"
-tmpfile=$(mktemp)
+tmpfile=$(mktemp "${state_file}.XXXXXX")
 jq '.awaitingApproval = true' "$state_file" > "$tmpfile" && mv "$tmpfile" "$state_file"
 ```
 

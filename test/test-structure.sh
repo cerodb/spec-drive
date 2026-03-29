@@ -64,6 +64,14 @@ done
 # Schema
 check_exists "schemas/spec-drive.schema.json"
 
+echo "-- Checking state-update safety..."
+if grep -q 'mktemp "\${state_file}\.XXXXXX"' agents/researcher.md; then
+  PASS=$((PASS + 1))
+else
+  echo "FAIL: researcher agent missing same-directory temp file safety"
+  FAIL=$((FAIL + 1))
+fi
+
 # Total file count (non-directory, non-.git)
 TOTAL=$(find . -not -path './.git/*' -not -path './test/*' -not -path './node_modules/*' -type f | wc -l)
 echo ""
