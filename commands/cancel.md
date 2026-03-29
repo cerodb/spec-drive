@@ -29,6 +29,17 @@ Stop here.
 
 Read `.spec-drive-state.json` to get the project name and basePath for confirmation output.
 
+Resolve and validate:
+- `projectDir` = parent directory of `basePath`
+- approved root = `~/spec-drive-projects/` or configured `projectRoot`
+- refuse deletion if `projectDir` is empty, `/`, `$HOME`, or outside the approved root
+
+If the resolved path fails validation:
+```
+Refusing to cancel/delete: resolved project path is outside the approved Spec-Drive root.
+```
+Stop here.
+
 ### 3. Delete state file
 
 Remove `.spec-drive-state.json`:
@@ -45,8 +56,7 @@ Remove any temporary parallel execution progress files:
 
 ```bash
 rm -f "{basePath}/.progress-task-"*.md
-rm -f "{basePath}/.tasks.lock"
-rm -f "{basePath}/.git-commit.lock"
+rm -rf "{basePath}/.execution-state.lock"
 ```
 
 ### 5. Handle --delete flag
@@ -73,8 +83,14 @@ Type the project name to confirm deletion: {name}
 
 Wait for the user to type the project name. If confirmed:
 ```bash
-rm -rf "{projectDir}"
+if command -v trash >/dev/null 2>&1; then
+  trash "{projectDir}"
+else
+  rm -rf "{projectDir}"
+fi
 ```
+
+Only perform the deletion if the path validation from Step 2 succeeded.
 
 Output:
 ```

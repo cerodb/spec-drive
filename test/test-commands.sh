@@ -65,6 +65,19 @@ for cmd in "${COMMANDS[@]}"; do
   fi
 done
 
+echo "-- Checking cancel safety guidance..."
+if grep -q 'outside the approved Spec-Drive root' commands/cancel.md; then
+  ok "cancel command guards deletion to approved project root"
+else
+  fail "cancel command missing approved-root deletion guard"
+fi
+
+if grep -q 'command -v trash' commands/cancel.md; then
+  ok "cancel command prefers trash when available"
+else
+  fail "cancel command missing trash-first deletion guidance"
+fi
+
 echo ""
 echo "Commands checked: ${#COMMANDS[@]}"
 echo "Passed: $PASS | Failed: $FAIL"

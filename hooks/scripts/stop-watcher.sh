@@ -32,6 +32,20 @@ else
     PROJECT_ROOT="${HOME}/spec-drive-projects"
 fi
 
+PROJECT_ROOT_REAL="$(readlink -f "$PROJECT_ROOT" 2>/dev/null || echo "$PROJECT_ROOT")"
+
+is_safe_spec_path() {
+    local candidate="$1"
+    [ -n "$candidate" ] || return 1
+    [ -d "$candidate" ] || return 1
+    local resolved
+    resolved="$(readlink -f "$candidate" 2>/dev/null || echo "$candidate")"
+    case "$resolved" in
+        "$PROJECT_ROOT_REAL"/*/spec) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
 # --- Project Discovery ---
 # Primary: check if cwd itself has a spec/ subdir with state
 SPEC_PATH=""
@@ -50,30 +64,66 @@ elif [ -f "$(dirname "$CWD")/spec/.spec-drive-state.json" ] 2>/dev/null; then
     STATE_FILE="$SPEC_PATH/.spec-drive-state.json"
 # Secondary: scan configured project root for active execution
 elif [ -d "$PROJECT_ROOT" ]; then
+    EXECUTION_MATCHES=()
     for dir in "$PROJECT_ROOT"/*/spec; do
         state="$dir/.spec-drive-state.json"
-        if [ -f "$state" ] && jq -e '.phase == "execution" and .awaitingApproval == false' "$state" >/dev/null 2>&1; then
-            SPEC_PATH="$dir"
-            STATE_FILE="$state"
-            break
+        if is_safe_spec_path "$dir" && [ -f "$state" ] && jq -e '.phase == "execution" and .awaitingApproval == false' "$state" >/dev/null 2>&1; then
+            EXECUTION_MATCHES+=("$dir")
         fi
     done
 
+    if [ "${#EXECUTION_MATCHES[@]}" -eq 1 ]; then
+        SPEC_PATH="${EXECUTION_MATCHES[0]}"
+        STATE_FILE="$SPEC_PATH/.spec-drive-state.json"
+    elif [ "${#EXECUTION_MATCHES[@]}" -gt 1 ]; then
+        cat <<EOF
+## Ambiguous Active Spec
+
+Multiple execution-phase specs were found under $PROJECT_ROOT_REAL.
+Refusing to auto-resume the first match.
+
+Use a cwd inside the intended project or narrow project discovery before resuming.
+EOF
+        exit 0
+    fi
+
     # If no execution project found, check for auto mode in analysis phases
     if [ -z "$SPEC_PATH" ]; then
+        AUTO_MATCHES=()
         for dir in "$PROJECT_ROOT"/*/spec; do
             state="$dir/.spec-drive-state.json"
-            if [ -f "$state" ] && jq -e '.mode == "auto" and .awaitingApproval == false' "$state" >/dev/null 2>&1; then
-                SPEC_PATH="$dir"
-                STATE_FILE="$state"
-                break
+            if is_safe_spec_path "$dir" && [ -f "$state" ] && jq -e '.mode == "auto" and .awaitingApproval == false' "$state" >/dev/null 2>&1; then
+                AUTO_MATCHES+=("$dir")
             fi
         done
+
+        if [ "${#AUTO_MATCHES[@]}" -eq 1 ]; then
+            SPEC_PATH="${AUTO_MATCHES[0]}"
+            STATE_FILE="$SPEC_PATH/.spec-drive-state.json"
+        elif [ "${#AUTO_MATCHES[@]}" -gt 1 ]; then
+            cat <<EOF
+## Ambiguous Auto Spec
+
+Multiple auto-mode specs were found under $PROJECT_ROOT_REAL.
+Refusing to auto-continue without an explicit cwd-bound project.
+EOF
+            exit 0
+        fi
     fi
 fi
 
 # No active project found — nothing to do
 if [ -z "$SPEC_PATH" ] || [ -z "$STATE_FILE" ]; then
+    exit 0
+fi
+
+if ! is_safe_spec_path "$SPEC_PATH"; then
+    cat <<EOF
+## Unsafe Spec Path
+
+Resolved spec path is outside the approved project root:
+$SPEC_PATH
+EOF
     exit 0
 fi
 
@@ -177,6 +227,8 @@ EOF
 fi
 
 # --- Cleanup orphaned .progress-task-*.md files older than 60 min ---
-find "$SPEC_PATH" -name ".progress-task-*.md" -mmin +60 -delete 2>/dev/null || true
+if is_safe_spec_path "$SPEC_PATH"; then
+    find "$SPEC_PATH" -name ".progress-task-*.md" -mmin +60 -delete 2>/dev/null || true
+fi
 
 exit 0

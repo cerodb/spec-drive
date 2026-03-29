@@ -85,6 +85,29 @@ else
   fail "SessionStart hook does not reference context-loader.sh (got: $SESSION_CMD)"
 fi
 
+echo "-- Ambiguous project safety..."
+TMP_HOME="$(mktemp -d)"
+trap 'rm -rf "$TMP_HOME"' EXIT
+mkdir -p "$TMP_HOME/spec-drive-projects/P100/spec" "$TMP_HOME/spec-drive-projects/P101/spec"
+cat >"$TMP_HOME/.spec-drive-config.json" <<EOF
+{"projectRoot":"$TMP_HOME/spec-drive-projects"}
+EOF
+cat >"$TMP_HOME/spec-drive-projects/P100/spec/.spec-drive-state.json" <<'EOF'
+{"phase":"execution","awaitingApproval":false,"mode":"normal","taskIndex":0,"totalTasks":1}
+EOF
+cat >"$TMP_HOME/spec-drive-projects/P101/spec/.spec-drive-state.json" <<'EOF'
+{"phase":"execution","awaitingApproval":false,"mode":"normal","taskIndex":0,"totalTasks":1}
+EOF
+AMBIGUOUS_OUTPUT="$(HOME="$TMP_HOME" bash hooks/scripts/stop-watcher.sh <<'EOF'
+{"cwd":"/tmp"}
+EOF
+)"
+if echo "$AMBIGUOUS_OUTPUT" | grep -q "Ambiguous Active Spec"; then
+  ok "stop-watcher refuses ambiguous active project selection"
+else
+  fail "stop-watcher did not report ambiguous active project selection"
+fi
+
 echo ""
 echo "Passed: $PASS | Failed: $FAIL"
 
