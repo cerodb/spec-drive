@@ -30,6 +30,12 @@ cd spec-drive
 npm test
 ```
 
+Current validation truth:
+
+- `npm test` is the main checkout validation path today
+- the tests are plain shell scripts and are intended to remain portable
+- Codex/Kiro/Coda native installers are not part of this repo yet
+
 Or run the shell checks directly:
 
 ```bash
@@ -114,6 +120,8 @@ Minimum recommended contract in Codex:
   - `.progress.md`
   - `.spec-drive-state.json`
 
+This means Codex support is real but adapter-driven, not "install and go".
+
 ## Kiro Installation
 
 There is no Kiro-native package in this repo.
@@ -137,6 +145,8 @@ Recommended approach:
 2. Import the command prompts from `commands/`.
 3. Keep the exact artifact chain and state file naming.
 4. Reimplement session-start and stop logic using Coda's own runtime hooks or orchestration layer.
+
+Treat both Kiro and Coda support as manual adapter ports in `v1.0.0`, not native packaged installs.
 
 ## Post-Install Smoke Test
 

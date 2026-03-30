@@ -31,6 +31,16 @@ This repo is not equally automatic everywhere.
 
 Honest version: this repo is fully usable today, but only Claude-style runtimes have native plugin metadata in-tree.
 
+## Validation Status
+
+- Local shell validation passes with `npm test` on Linux.
+- The shell test suite is intended to stay POSIX-friendly so it can run on macOS too.
+- This repo does **not** yet ship native install adapters for Codex, Kiro, or Globant Coda.
+- Cross-CLI support today means:
+  - portable artifacts
+  - portable prompts
+  - manual adapter work per runtime
+
 ## Requirements
 
 - `bash`
@@ -97,6 +107,8 @@ If your runtime cannot execute shell hooks directly, preserve the same behavior 
 
 - Session start: detect active project and surface state/context
 - Stop: continue execution loop safely, with ambiguity and iteration guards
+
+This is deliberate. The portability claim is about the artifact/protocol design, not about shipping one-click adapters for every CLI in `v1.0.0`.
 
 ## Project Layout at Runtime
 
