@@ -41,7 +41,7 @@ for cmd in "${COMMANDS[@]}"; do
   fi
 
   # Extract frontmatter (between first and second ---)
-  FRONTMATTER=$(sed -n '2,/^---$/p' "$FILE" | head -n -1)
+  FRONTMATTER=$(sed -n '2,/^---$/p' "$FILE" | sed '$d')
 
   # Check description field
   if echo "$FRONTMATTER" | grep -q '^description:'; then

@@ -2,5 +2,19 @@
   "name": "spec-drive",
   "version": "1.0.0",
   "description": "Spec-driven development: idea -> research -> requirements -> design -> tasks -> autonomous execution with quality gates.",
-  "license": "MIT"
+  "author": {
+    "name": "cerodb",
+    "url": "https://github.com/cerodb"
+  },
+  "license": "MIT",
+  "keywords": [
+    "spec-driven",
+    "research",
+    "requirements",
+    "design",
+    "tasks",
+    "autonomous",
+    "cross-cli",
+    "artifact-first"
+  ]
 }

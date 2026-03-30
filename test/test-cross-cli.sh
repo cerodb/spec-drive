@@ -197,7 +197,7 @@ for f in "${FILES[@]}"; do
     continue
   fi
 
-  FRONTMATTER="$(sed -n '2,/^---$/p' "$FILE" | head -n -1)"
+  FRONTMATTER="$(sed -n '2,/^---$/p' "$FILE" | sed '$d')"
   if echo "$FRONTMATTER" | grep -q '^spec:' && \
      echo "$FRONTMATTER" | grep -q '^phase:' && \
      echo "$FRONTMATTER" | grep -q '^created:'; then
