@@ -4,6 +4,12 @@ This file is the operational install guide for `spec-drive`.
 
 Use it when you want concrete setup steps instead of the higher-level overview in `README.md`.
 
+Important transition note:
+
+- the target product direction is marketplace installation for Claude-compatible runtimes
+- this source-repo install path is still useful for development and validation
+- but it should not be treated as the final preferred distribution experience
+
 ## Prerequisites
 
 Install these first:
@@ -70,6 +76,15 @@ Example:
 
 ## Claude-Compatible Installation
 
+Preferred direction:
+
+- install through the future `cerodb/cerodb-plugins` marketplace repo
+
+Current status:
+
+- the marketplace path is being introduced
+- the steps below remain the temporary source-repo bootstrap path
+
 This repo already contains Claude-style plugin metadata:
 
 - `.claude-plugin/plugin.json`
@@ -92,6 +107,8 @@ bash hooks/scripts/stop-watcher.sh <<< '{"cwd":"/tmp"}'
 ```
 
 If your Claude environment uses a local plugin directory, install this repo there using that runtime's normal plugin mechanism. This repository is already laid out for that style of loading.
+
+Do not present this temporary source-repo path as equivalent to a polished marketplace install.
 
 ## Codex Installation
 

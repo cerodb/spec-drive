@@ -50,6 +50,16 @@ Honest version: this repo is fully usable today, but only Claude-style runtimes 
 
 ## Install
 
+Preferred long-term install path for Claude-compatible runtimes:
+
+- install from the `cerodb/cerodb-plugins` marketplace repo
+
+Current reality:
+
+- this source repo is still the development/source-of-truth repo
+- the marketplace/distribution path is being introduced
+- until that marketplace path is live and validated, direct source-repo setup remains a transitional developer path, not the ideal end-user install story
+
 ### 1. Clone
 
 ```bash
@@ -77,6 +87,11 @@ For runtime-specific install steps, see [INSTALL.md](./INSTALL.md).
 
 ## Install in Claude-Compatible Runtimes
 
+Transition note:
+
+- the intended install surface is a marketplace repo, not long-term manual registration from the source repo
+- until the marketplace path is finalized, the instructions below are best read as a developer/bootstrap path
+
 Point your plugin loader at this repository root.
 
 Relevant files:
@@ -86,7 +101,7 @@ Relevant files:
 - commands: `commands/`
 - agents: `agents/`
 
-If your Claude runtime expects plugins in a local plugin directory, install this repo there using whatever plugin mechanism that runtime already supports. This repo already includes the expected Claude-style metadata; no extra packaging step is required.
+If your Claude runtime expects plugins in a local plugin directory, install this repo there using whatever plugin mechanism that runtime already supports. This repo already includes Claude-style metadata, but this source-repo path should be treated as transitional until the marketplace path is the normal install flow.
 
 ## Install in Codex, Kiro, or Globant Coda
 
