@@ -4,11 +4,18 @@ This file is the operational install guide for `spec-drive`.
 
 Use it when you want concrete setup steps instead of the higher-level overview in `README.md`.
 
-Important transition note:
+Important install note:
 
-- the target product direction is marketplace installation for Claude-compatible runtimes
+- the preferred install path is marketplace installation for Claude-compatible runtimes
 - this source-repo install path is still useful for development and validation
 - but it should not be treated as the final preferred distribution experience
+
+Preferred marketplace commands:
+
+```text
+/plugin marketplace add cerodb/cerodb-plugins
+/plugin install spec-drive@cerodb
+```
 
 ## Prerequisites
 
@@ -78,12 +85,12 @@ Example:
 
 Preferred direction:
 
-- install through the future `cerodb/cerodb-plugins` marketplace repo
+- install through the `cerodb/cerodb-plugins` marketplace repo
 
 Current status:
 
-- the marketplace path is being introduced
-- the steps below remain the temporary source-repo bootstrap path
+- the marketplace path is live and validated
+- the steps below remain the source-repo bootstrap path
 
 This repo already contains Claude-style plugin metadata:
 
