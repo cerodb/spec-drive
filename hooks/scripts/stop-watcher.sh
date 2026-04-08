@@ -27,7 +27,7 @@ fi
 # Get transcript path for completion check
 TRANSCRIPT_PATH=$(echo "$INPUT" | jq -r '.transcript_path // empty' 2>/dev/null || true)
 
-# Default project root (overridable via workspace, XDG, or legacy config)
+# Default project root (overridable via workspace or XDG config)
 PROJECT_ROOT="$(spec_drive_resolve_project_root "$CWD")"
 
 PROJECT_ROOT_REAL="$(readlink -f "$PROJECT_ROOT" 2>/dev/null || echo "$PROJECT_ROOT")"

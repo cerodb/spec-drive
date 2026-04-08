@@ -101,7 +101,8 @@ echo "-- Ambiguous project safety..."
 TMP_HOME="$(mktemp -d)"
 trap 'rm -rf "$TMP_HOME"' EXIT
 mkdir -p "$TMP_HOME/spec-drive-projects/P100/spec" "$TMP_HOME/spec-drive-projects/P101/spec"
-cat >"$TMP_HOME/.spec-drive-config.json" <<EOF
+mkdir -p "$TMP_HOME/.config/spec-drive"
+cat >"$TMP_HOME/.config/spec-drive/config.json" <<EOF
 {"projectRoot":"$TMP_HOME/spec-drive-projects"}
 EOF
 cat >"$TMP_HOME/spec-drive-projects/P100/spec/.spec-drive-state.json" <<'EOF'

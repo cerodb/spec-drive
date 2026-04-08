@@ -72,7 +72,6 @@ Optional override file. Resolution order is first-match-wins:
 ```text
 .spec-drive-config.json           # at nearest git root, or cwd if no git root
 ~/.config/spec-drive/config.json # or $XDG_CONFIG_HOME/spec-drive/config.json
-~/.spec-drive-config.json        # legacy fallback
 ```
 
 Example:
