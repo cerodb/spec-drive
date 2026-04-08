@@ -50,15 +50,22 @@ Honest version: this repo is fully usable today, but only Claude-style runtimes 
 
 ## Install
 
-Preferred long-term install path for Claude-compatible runtimes:
+Preferred install path for Claude-compatible runtimes:
 
 - install from the `cerodb/cerodb-plugins` marketplace repo
+
+Current marketplace install:
+
+```text
+/plugin marketplace add cerodb/cerodb-plugins
+/plugin install spec-drive@cerodb
+```
 
 Current reality:
 
 - this source repo is still the development/source-of-truth repo
-- the marketplace/distribution path is being introduced
-- until that marketplace path is live and validated, direct source-repo setup remains a transitional developer path, not the ideal end-user install story
+- the marketplace/distribution path is now live
+- direct source-repo setup remains a developer/bootstrap path, not the preferred end-user install story
 
 ### 1. Clone
 
@@ -87,10 +94,10 @@ For runtime-specific install steps, see [INSTALL.md](./INSTALL.md).
 
 ## Install in Claude-Compatible Runtimes
 
-Transition note:
+Install note:
 
-- the intended install surface is a marketplace repo, not long-term manual registration from the source repo
-- until the marketplace path is finalized, the instructions below are best read as a developer/bootstrap path
+- the preferred install surface is the `cerodb/cerodb-plugins` marketplace
+- the instructions below are the developer/bootstrap path from source
 
 Point your plugin loader at this repository root.
 
