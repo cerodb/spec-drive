@@ -3,7 +3,6 @@
 # Resolution order:
 # 1. Workspace config at nearest git root (or cwd if no git root)
 # 2. XDG config at ${XDG_CONFIG_HOME:-$HOME/.config}/spec-drive/config.json
-# 3. Legacy home config at ~/.spec-drive-config.json
 
 set -euo pipefail
 
@@ -27,13 +26,11 @@ spec_drive_workspace_root() {
 
 spec_drive_resolve_config_file() {
     local start_dir="${1:-$PWD}"
-    local workspace_root workspace_config xdg_config legacy_config
+    local workspace_root workspace_config xdg_config
 
     workspace_root="$(spec_drive_workspace_root "$start_dir")"
     workspace_config="$workspace_root/.spec-drive-config.json"
     xdg_config="${XDG_CONFIG_HOME:-$HOME/.config}/spec-drive/config.json"
-    legacy_config="$HOME/.spec-drive-config.json"
-
     if [ -f "$workspace_config" ] && jq empty "$workspace_config" >/dev/null 2>&1; then
         printf '%s\n' "$workspace_config"
         return 0
@@ -41,11 +38,6 @@ spec_drive_resolve_config_file() {
 
     if [ -f "$xdg_config" ] && jq empty "$xdg_config" >/dev/null 2>&1; then
         printf '%s\n' "$xdg_config"
-        return 0
-    fi
-
-    if [ -f "$legacy_config" ] && jq empty "$legacy_config" >/dev/null 2>&1; then
-        printf '%s\n' "$legacy_config"
         return 0
     fi
 

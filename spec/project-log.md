@@ -52,10 +52,17 @@ status: active
 - Implemented the config resolution chain requested in GitHub issue `#2`:
   - workspace `.spec-drive-config.json` at nearest git root (or cwd if no git root)
   - XDG config at `${XDG_CONFIG_HOME:-$HOME/.config}/spec-drive/config.json`
-  - legacy home config at `~/.spec-drive-config.json`
 - Added a shared helper script so both hooks resolve config the same way instead of duplicating the logic.
 - Added support for relative `projectRoot` values, resolved from the config file location.
 - Updated `README.md`, `INSTALL.md`, and command guidance so the new contract is documented consistently.
 - Validated with:
   - `bash test/test-hooks.sh`
   - `bash test/test-commands.sh`
+
+## 2026-04-08 — Legacy fallback removed
+
+- Gabriel decided there is no need to preserve `~/.spec-drive-config.json` fallback compatibility.
+- Removed home-dotfile fallback from runtime resolution and docs.
+- `spec-drive` now resolves config only from:
+  - workspace `.spec-drive-config.json`
+  - XDG config at `${XDG_CONFIG_HOME:-$HOME/.config}/spec-drive/config.json`

@@ -23,7 +23,7 @@ if [ -z "$CWD" ]; then
     exit 0
 fi
 
-# Default project root (overridable via workspace, XDG, or legacy config)
+# Default project root (overridable via workspace or XDG config)
 PROJECT_ROOT="$(spec_drive_resolve_project_root "$CWD")"
 
 PROJECT_ROOT_REAL="$(readlink -f "$PROJECT_ROOT" 2>/dev/null || echo "$PROJECT_ROOT")"

@@ -44,7 +44,6 @@ Determine where projects live:
 # Config resolution (first match wins):
 # 1. .spec-drive-config.json at nearest git root (or cwd if no git root)
 # 2. ${XDG_CONFIG_HOME:-$HOME/.config}/spec-drive/config.json
-# 3. $HOME/.spec-drive-config.json
 #
 # If projectRoot is relative, resolve it relative to the config file location.
 PROJECT_ROOT="<resolved project root or $HOME/spec-drive-projects fallback>"
