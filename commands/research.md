@@ -11,7 +11,7 @@ Re-run the research phase for the active project. Validates prerequisites, deleg
 Locate the project's spec directory by checking two locations in order:
 
 1. **Current working directory**: Check if `./spec/.spec-drive-state.json` exists (user is in project root) or `./.spec-drive-state.json` exists (user is in spec/ directory)
-2. **Project root scan**: Read projectRoot from `~/.spec-drive-config.json` (default: `~/spec-drive-projects/`), scan subdirectories for any containing `spec/.spec-drive-state.json`
+2. **Project root scan**: Resolve config using workspace -> XDG -> legacy order, then read `projectRoot` (default: `~/spec-drive-projects/`) and scan subdirectories for any containing `spec/.spec-drive-state.json`
 
 If multiple projects found during scan, list them and ask user to cd into the desired project.
 

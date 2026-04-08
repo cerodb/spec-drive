@@ -32,7 +32,7 @@ Read `.spec-drive-state.json` to get the project name and basePath for confirmat
 Resolve and validate:
 - `projectDir` = parent directory of `basePath`
 - Resolve symlinks: `projectDir="$(readlink -f "$projectDir")"`
-- approved root = resolve `~/spec-drive-projects/` (or configured `projectRoot`) with `readlink -f`
+- approved root = resolve `~/spec-drive-projects/` (or configured `projectRoot` from workspace -> XDG -> legacy config order) with `readlink -f`
 - refuse if `projectDir` is empty, `/`, `$HOME`, or the resolved path is outside the resolved approved root
 
 If the resolved path fails validation:
