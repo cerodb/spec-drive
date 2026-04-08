@@ -46,3 +46,16 @@ status: active
   - `think-tank`
 - Updated the local marketplace scaffold accordingly.
 - `think-tank` was copied into the scaffold from the committed `HEAD` state of its source repo to avoid packaging local dirty changes by accident.
+
+## 2026-04-08 — Issue #2 implemented
+
+- Implemented the config resolution chain requested in GitHub issue `#2`:
+  - workspace `.spec-drive-config.json` at nearest git root (or cwd if no git root)
+  - XDG config at `${XDG_CONFIG_HOME:-$HOME/.config}/spec-drive/config.json`
+  - legacy home config at `~/.spec-drive-config.json`
+- Added a shared helper script so both hooks resolve config the same way instead of duplicating the logic.
+- Added support for relative `projectRoot` values, resolved from the config file location.
+- Updated `README.md`, `INSTALL.md`, and command guidance so the new contract is documented consistently.
+- Validated with:
+  - `bash test/test-hooks.sh`
+  - `bash test/test-commands.sh`

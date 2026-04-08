@@ -9,6 +9,9 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "$SCRIPT_DIR/resolve-config.sh"
+
 # Read hook input from stdin
 INPUT=$(cat)
 
@@ -24,13 +27,8 @@ fi
 # Get transcript path for completion check
 TRANSCRIPT_PATH=$(echo "$INPUT" | jq -r '.transcript_path // empty' 2>/dev/null || true)
 
-# Default project root (overridable via config)
-CONFIG_FILE="${HOME}/.spec-drive-config.json"
-if [ -f "$CONFIG_FILE" ] && jq empty "$CONFIG_FILE" 2>/dev/null; then
-    PROJECT_ROOT=$(jq -r --arg default "${HOME}/spec-drive-projects" '.projectRoot // $default' "$CONFIG_FILE" 2>/dev/null || echo "${HOME}/spec-drive-projects")
-else
-    PROJECT_ROOT="${HOME}/spec-drive-projects"
-fi
+# Default project root (overridable via workspace, XDG, or legacy config)
+PROJECT_ROOT="$(spec_drive_resolve_project_root "$CWD")"
 
 PROJECT_ROOT_REAL="$(readlink -f "$PROJECT_ROOT" 2>/dev/null || echo "$PROJECT_ROOT")"
 

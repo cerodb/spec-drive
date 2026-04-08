@@ -43,6 +43,12 @@ else
   fail "context-loader.sh has syntax errors"
 fi
 
+if bash -n hooks/scripts/resolve-config.sh 2>/dev/null; then
+  ok "resolve-config.sh passes syntax check"
+else
+  fail "resolve-config.sh has syntax errors"
+fi
+
 # 4. Both scripts are executable
 echo "-- Script permissions..."
 if [ -x hooks/scripts/stop-watcher.sh ]; then
@@ -55,6 +61,12 @@ if [ -x hooks/scripts/context-loader.sh ]; then
   ok "context-loader.sh is executable"
 else
   fail "context-loader.sh is not executable"
+fi
+
+if [ -f hooks/scripts/resolve-config.sh ]; then
+  ok "resolve-config.sh exists"
+else
+  fail "resolve-config.sh is missing"
 fi
 
 # 5. hooks.json references correct script paths
@@ -121,6 +133,48 @@ if echo "$NUMERIC_OUTPUT" | grep -q "Continue spec: P100"; then
   ok "stop-watcher safely normalizes non-numeric iteration values"
 else
   fail "stop-watcher did not safely handle non-numeric iteration values"
+fi
+
+echo "-- Workspace config precedence..."
+WORKSPACE="$TMP_HOME/workspace"
+mkdir -p "$WORKSPACE/repo" "$WORKSPACE/workspace-projects/P200/spec"
+(
+  cd "$WORKSPACE/repo"
+  git init -q
+)
+cat >"$WORKSPACE/repo/.spec-drive-config.json" <<EOF
+{"projectRoot":"../workspace-projects"}
+EOF
+cat >"$WORKSPACE/workspace-projects/P200/spec/.spec-drive-state.json" <<'EOF'
+{"name":"P200","phase":"execution","awaitingApproval":false,"mode":"normal","taskIndex":0,"totalTasks":1}
+EOF
+WORKSPACE_OUTPUT="$(HOME="$TMP_HOME" bash hooks/scripts/stop-watcher.sh <<EOF
+{"cwd":"$WORKSPACE/repo"}
+EOF
+)"
+if echo "$WORKSPACE_OUTPUT" | grep -q "Continue spec: P200"; then
+  ok "workspace config resolves relative projectRoot from git root"
+else
+  fail "workspace config did not resolve relative projectRoot from git root"
+fi
+
+echo "-- XDG fallback..."
+rm -f "$WORKSPACE/repo/.spec-drive-config.json"
+mkdir -p "$TMP_HOME/.config/spec-drive" "$TMP_HOME/xdg-projects/P201/spec"
+cat >"$TMP_HOME/.config/spec-drive/config.json" <<EOF
+{"projectRoot":"$TMP_HOME/xdg-projects"}
+EOF
+cat >"$TMP_HOME/xdg-projects/P201/spec/.spec-drive-state.json" <<'EOF'
+{"name":"P201","phase":"execution","awaitingApproval":false,"mode":"normal","taskIndex":0,"totalTasks":1}
+EOF
+XDG_OUTPUT="$(HOME="$TMP_HOME" bash hooks/scripts/stop-watcher.sh <<EOF
+{"cwd":"$WORKSPACE/repo"}
+EOF
+)"
+if echo "$XDG_OUTPUT" | grep -q "Continue spec: P201"; then
+  ok "xdg config is used when workspace config is absent"
+else
+  fail "xdg config was not used when workspace config is absent"
 fi
 
 echo ""
