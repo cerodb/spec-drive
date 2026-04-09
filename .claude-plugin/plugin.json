@@ -72,6 +72,11 @@
       "name": "switch",
       "path": "commands/switch.md",
       "description": "Switch the active spec-drive project and write ~/.spec-drive-active.json"
+    },
+    {
+      "name": "refactor",
+      "path": "commands/refactor.md",
+      "description": "Iterate coherently on spec artifacts after discovering design flaws during execution"
     }
   ]
 }
