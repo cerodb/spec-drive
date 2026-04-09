@@ -97,6 +97,37 @@ else
   fail "SessionStart hook does not reference context-loader.sh (got: $SESSION_CMD)"
 fi
 
+echo "-- portable_realpath portability..."
+# Verify portable_realpath is defined in resolve-config.sh
+if grep -q 'portable_realpath()' hooks/scripts/resolve-config.sh; then
+  ok "portable_realpath() is defined in resolve-config.sh"
+else
+  fail "portable_realpath() is not defined in resolve-config.sh"
+fi
+
+# Verify hook scripts no longer use bare readlink -f
+if ! grep -q 'readlink -f' hooks/scripts/stop-watcher.sh; then
+  ok "stop-watcher.sh does not use bare readlink -f"
+else
+  fail "stop-watcher.sh still uses bare readlink -f"
+fi
+
+if ! grep -q 'readlink -f' hooks/scripts/context-loader.sh; then
+  ok "context-loader.sh does not use bare readlink -f"
+else
+  fail "context-loader.sh still uses bare readlink -f"
+fi
+
+# Verify portable_realpath resolves correctly on this system
+REAL_TMP_DIR="$(mktemp -d)"
+trap 'rm -rf "$REAL_TMP_DIR"' EXIT
+RESOLVED="$(bash -c ". hooks/scripts/resolve-config.sh && portable_realpath \"$REAL_TMP_DIR\"")"
+if [ "$RESOLVED" = "$REAL_TMP_DIR" ]; then
+  ok "portable_realpath resolves a real directory path correctly"
+else
+  fail "portable_realpath returned unexpected result: '$RESOLVED' (expected '$REAL_TMP_DIR')"
+fi
+
 echo "-- Ambiguous project safety..."
 TMP_HOME="$(mktemp -d)"
 trap 'rm -rf "$TMP_HOME"' EXIT
