@@ -79,6 +79,68 @@ for prop in taskIndex totalTasks awaitingApproval; do
   fi
 done
 
+# 6. Has requirementsSha and designSha staleness fields
+echo "-- Staleness SHA fields..."
+if jq -e '.properties.requirementsSha' "$SCHEMA" >/dev/null 2>&1; then
+  ok "has 'requirementsSha' property"
+else
+  fail "missing 'requirementsSha' property"
+fi
+
+if jq -e '.properties.requirementsSha.type == "string"' "$SCHEMA" >/dev/null 2>&1; then
+  ok "requirementsSha is type string"
+else
+  fail "requirementsSha is not type string"
+fi
+
+if jq -e '.properties.requirementsSha.description | test("requirements\\.md")' "$SCHEMA" >/dev/null 2>&1; then
+  ok "requirementsSha description references requirements.md"
+else
+  fail "requirementsSha description missing requirements.md reference"
+fi
+
+if jq -e '.properties.designSha' "$SCHEMA" >/dev/null 2>&1; then
+  ok "has 'designSha' property"
+else
+  fail "missing 'designSha' property"
+fi
+
+if jq -e '.properties.designSha.type == "string"' "$SCHEMA" >/dev/null 2>&1; then
+  ok "designSha is type string"
+else
+  fail "designSha is not type string"
+fi
+
+if jq -e '.properties.designSha.description | test("design\\.md")' "$SCHEMA" >/dev/null 2>&1; then
+  ok "designSha description references design.md"
+else
+  fail "designSha description missing design.md reference"
+fi
+
+# 7. requirementsSha and designSha are NOT in required array (optional fields)
+echo "-- SHA fields are optional..."
+if jq -e '.required | index("requirementsSha") | not' "$SCHEMA" >/dev/null 2>&1; then
+  ok "requirementsSha is optional (not in required)"
+else
+  fail "requirementsSha should not be in required array"
+fi
+
+if jq -e '.required | index("designSha") | not' "$SCHEMA" >/dev/null 2>&1; then
+  ok "designSha is optional (not in required)"
+else
+  fail "designSha should not be in required array"
+fi
+
+# 8. Existing required properties unchanged
+echo "-- Existing required properties unchanged..."
+for prop in name basePath phase; do
+  if jq -e ".required | index(\"$prop\")" "$SCHEMA" >/dev/null 2>&1; then
+    ok "required still includes '$prop'"
+  else
+    fail "required missing '$prop'"
+  fi
+done
+
 echo ""
 echo "Passed: $PASS | Failed: $FAIL"
 
