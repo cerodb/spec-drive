@@ -18,7 +18,7 @@ fail() {
   echo "  FAIL: $1"
 }
 
-COMMANDS=(new research requirements design tasks-cmd implement status cancel help)
+COMMANDS=(new research requirements design tasks-cmd implement status cancel help list)
 
 echo "=== Spec-Drive Commands Test ==="
 
