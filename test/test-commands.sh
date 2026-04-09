@@ -65,6 +65,44 @@ for cmd in "${COMMANDS[@]}"; do
   fi
 done
 
+echo "-- Checking list command completeness..."
+LIST_FILE="commands/list.md"
+if [ -f "$LIST_FILE" ]; then
+  LIST_FM=$(sed -n '2,/^---$/p' "$LIST_FILE" | sed '$d')
+
+  if echo "$LIST_FM" | grep -q '^description:'; then
+    ok "list.md has description frontmatter key"
+  else
+    fail "list.md missing description frontmatter key"
+  fi
+
+  if echo "$LIST_FM" | grep -q '^argument-hint:'; then
+    ok "list.md has argument-hint frontmatter key"
+  else
+    fail "list.md missing argument-hint frontmatter key"
+  fi
+
+  if echo "$LIST_FM" | grep -q '^allowed-tools:'; then
+    ok "list.md has allowed-tools frontmatter key"
+  else
+    fail "list.md missing allowed-tools frontmatter key"
+  fi
+
+  if grep -q 'PROJECT_ROOT' "$LIST_FILE"; then
+    ok "list.md body references PROJECT_ROOT"
+  else
+    fail "list.md body does not reference PROJECT_ROOT"
+  fi
+
+  if grep -q 'phase' "$LIST_FILE"; then
+    ok "list.md body references phase output"
+  else
+    fail "list.md body does not reference phase output"
+  fi
+else
+  fail "commands/list.md does not exist"
+fi
+
 echo "-- Checking cancel safety guidance..."
 if grep -q 'outside the approved Spec-Drive root' commands/cancel.md; then
   ok "cancel command guards deletion to approved project root"
