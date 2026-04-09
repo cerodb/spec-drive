@@ -128,3 +128,71 @@
   - Assertions cover: description/argument-hint/allowed-tools frontmatter keys, ~/.spec-drive-active.json reference, activePath+switchedAt registry format, cwd fallback documentation
   - npm test exits 0: 173 tests, 0 failures
 - Tests: bash test/test-commands.sh exits 0; bash test/test-structure.sh exits 0; npm test exits 0 (173 tests)
+
+### US9: Add requirementsSha and designSha staleness fields to state schema
+- Status: DONE
+- Commit: 332cb12
+- Changes:
+  - schemas/spec-drive.schema.json: Added two optional string properties before taskResults:
+    - `requirementsSha`: "SHA of requirements.md at time tasks.md was generated"
+    - `designSha`: "SHA of design.md at time tasks.md was generated"
+    - Both are NOT in the required array (optional fields)
+    - Existing required properties (name, basePath, phase) and enums unchanged
+  - test/test-schema.sh: Added 11 new assertions (tests 6-8 blocks):
+    - requirementsSha exists, is type string, description references requirements.md
+    - designSha exists, is type string, description references design.md
+    - Both fields absent from required array (verified optional)
+    - Existing required props (name, basePath, phase) still present
+- Tests: npm test exits 0 (187 total tests, 0 failures — up from 173; schema tests grew from 9 to 20)
+
+## Codebase Patterns
+
+### Schema Staleness / SHA Fields
+- requirementsSha and designSha are optional string properties in .spec-drive-state.json
+- Intended usage: set when tasks.md is generated from design.md/requirements.md; compare against current SHA to detect upstream changes
+- SHA generation: `git hash-object <file>` or `sha256sum <file> | cut -c1-64`
+- Both fields absent by default (optional); never add them to "required" array
+
+### US10: Implement /spec-drive:refactor command prompt
+- Status: DONE
+- Commit: d25b7c9
+- Changes:
+  - commands/refactor.md: New command with valid YAML frontmatter (description, argument-hint: "", allowed-tools: [Read, Write, Edit, Bash, Glob, Grep])
+    - Step 1: Finds active project via cwd scan / ~/.spec-drive-active.json fallback
+    - Step 2: Reads .progress.md and extracts Learnings section as refactor trigger
+    - Step 3: Reads state and validates phase is >= requirements (not idea/research)
+    - Step 4: Detects staleness via requirementsSha/designSha comparison (git hash-object or sha256sum fallback)
+    - Steps 5-7: Updates artifacts in sequential order: requirements.md -> design.md -> tasks.md
+    - Step 8: Appends CHANGELOG entry to .progress.md (timestamp, trigger, per-artifact summary, rationale)
+    - Step 9: Rewrites requirementsSha/designSha in state; resets phase to "tasks" if tasks.md changed during execution
+    - Step 10: Confirms completion with next-steps hints; references phase-transitions.md for valid navigation
+  - test/test-commands.sh: Added 'refactor' to COMMANDS array (now 12 commands). Added 8-assertion "refactor command completeness" block: description/argument-hint/allowed-tools frontmatter keys, .progress.md reference, requirements/design/tasks sequential order, requirementsSha+designSha staleness, CHANGELOG reference, phase-transitions.md reference
+  - .claude-plugin/plugin.json: Registered refactor command with name/path/description (now 12 commands total)
+- Tests: npm test exits 0 (207 total assertions, 0 failures — up from 187)
+
+## Codebase Patterns
+
+### Refactor / Spec Iteration
+- Refactor is valid from any phase >= requirements (requirements, design, tasks, execution)
+- .progress.md Learnings section is the canonical trigger for when to run /spec-drive:refactor
+- Staleness detection: compare current sha256sum/git hash-object against requirementsSha/designSha stored in state
+- Sequential update order MUST be requirements → design → tasks (downstream artifacts depend on upstream)
+- If tasks.md changes while phase=execution, reset phase back to "tasks" so implement re-validates before continuing
+- CHANGELOG entries in .progress.md: timestamp + per-artifact summary + rationale (not just what changed, but why)
+- Atomic state write: mktemp same-dir temp → write → mv (consistent with research.md pattern)
+
+### US11: Register refactor command in plugin.json and add targeted tests
+- Status: DONE
+- Commit: (see US10 commit d25b7c9 — all US11 AC were satisfied there)
+- Changes:
+  - All US11 acceptance criteria were already satisfied by US10 implementation.
+  - .claude-plugin/plugin.json: refactor already registered with name/path/description (done in US10 commit d25b7c9)
+  - test/test-commands.sh: dedicated "refactor command completeness" block already present with 8 assertions (done in US10):
+    - description/argument-hint/allowed-tools frontmatter keys
+    - .progress.md reference as source for execution learnings
+    - Sequential update order: requirements → design → tasks
+    - requirementsSha and designSha staleness detection references
+    - CHANGELOG section reference in .progress.md
+    - phase-transitions.md navigation reference
+  - npm test exits 0: 196 total assertions, 0 failures (47 structure + 23 hooks + 70 commands + 20 schema + 26 cross-cli + 10 smoke)
+- Tests: bash test/test-commands.sh exits 0; bash test/test-structure.sh exits 0; npm test exits 0 (196 tests)
