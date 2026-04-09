@@ -44,6 +44,45 @@ Commands reject transitions that skip phases or go backwards:
 - Cannot run `/spec-drive:requirements` when phase is "idea" (research must complete first)
 - Cannot run `/spec-drive:implement` when phase is "design" (tasks must be planned first)
 
+## Refactor
+
+`/spec-drive:refactor` is a cross-cutting command that updates existing spec artifacts in place. It does **not** change the phase counter the same way forward commands do — instead it revises artifacts and then returns control to whichever phase is appropriate.
+
+### Valid Entry States
+
+| Phase | Trigger |
+|-------|---------|
+| `completed` | All tasks done; new learnings discovered after the fact |
+| `execution` | Mid-cycle discovery — learnings accumulate while tasks are running |
+
+Any phase `>= requirements` (i.e., `requirements`, `design`, `tasks`, `execution`, or `completed`) is a valid entry point. Running refactor from `research` or `idea` is rejected because no artifact exists yet to update.
+
+### Update Loop
+
+Artifacts are always updated in strict downstream order to avoid forward-reference inconsistencies:
+
+```
+requirements.md → design.md → tasks.md → (resume execution)
+```
+
+1. **requirements.md** — updated first; incorporates learnings or scope changes
+2. **design.md** — updated to reflect revised requirements
+3. **tasks.md** — regenerated from the new design; `requirementsSha` and `designSha` rewritten in state
+4. **Resume** — if entry phase was `execution`, phase resets to `tasks` so `/spec-drive:implement` re-validates before continuing
+
+Each step is independent: if only design changed, tasks still regenerates (downstream dependency). Skip a step only when the artifact is provably unaffected, and document the rationale in the CHANGELOG.
+
+### Staleness Re-Check Trigger
+
+Staleness is determined by comparing the current file hash against the stored SHA fields in `.spec-drive-state.json`:
+
+- **`requirementsSha`** — SHA of `requirements.md` at the time `tasks.md` was last generated
+- **`designSha`** — SHA of `design.md` at the time `tasks.md` was last generated
+
+When either SHA mismatches the current file hash, tasks are considered stale and must regenerate. The hashes are refreshed automatically at the end of each refactor run. This ensures that even a partial refactor (e.g., only requirements updated) will be caught on the next invocation.
+
+SHA generation: `git hash-object <file>` preferred; `sha256sum <file> | cut -c1-64` as fallback.
+
 ## Iteration Limits
 
 - `maxTaskIterations` (default: 5): Max retries per individual task. Exceeded = stop with error.

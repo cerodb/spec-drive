@@ -94,6 +94,36 @@ else
   FAIL=$((FAIL + 1))
 fi
 
+echo "-- Checking phase-transitions.md Refactor section..."
+PT_FILE="skills/spec-workflow/references/phase-transitions.md"
+if grep -q '^## Refactor' "$PT_FILE"; then
+  PASS=$((PASS + 1))
+else
+  echo "FAIL: phase-transitions.md missing Refactor section"
+  FAIL=$((FAIL + 1))
+fi
+
+if grep -q 'completed' "$PT_FILE" && grep -q 'execution' "$PT_FILE"; then
+  PASS=$((PASS + 1))
+else
+  echo "FAIL: phase-transitions.md Refactor section missing entry states (completed, execution)"
+  FAIL=$((FAIL + 1))
+fi
+
+if grep -q 'requirements.md' "$PT_FILE" && grep -q 'design.md' "$PT_FILE" && grep -q 'tasks.md' "$PT_FILE"; then
+  PASS=$((PASS + 1))
+else
+  echo "FAIL: phase-transitions.md Refactor section missing update loop (requirements -> design -> tasks)"
+  FAIL=$((FAIL + 1))
+fi
+
+if grep -q 'requirementsSha' "$PT_FILE" && grep -q 'designSha' "$PT_FILE"; then
+  PASS=$((PASS + 1))
+else
+  echo "FAIL: phase-transitions.md Refactor section missing requirementsSha/designSha staleness trigger"
+  FAIL=$((FAIL + 1))
+fi
+
 # Total file count (non-directory, non-.git)
 TOTAL=$(find . -not -path './.git/*' -not -path './test/*' -not -path './node_modules/*' -type f | wc -l)
 echo ""
