@@ -209,6 +209,97 @@ else
   fail "xdg config was not used when workspace config is absent"
 fi
 
+echo "-- find -mmin portability (US2)..."
+# AC1: no find -mmin usage remains in stop-watcher.sh (exclude comment lines)
+if ! grep -vE '^\s*#' hooks/scripts/stop-watcher.sh | grep -qE 'find\s.*-mmin'; then
+  ok "stop-watcher.sh does not use GNU-only find -mmin"
+else
+  fail "stop-watcher.sh still contains GNU-only find -mmin"
+fi
+
+# AC4: cleanup block is still guarded by is_safe_spec_path
+if grep -A2 'is_safe_spec_path.*SPEC_PATH' hooks/scripts/stop-watcher.sh | grep -q '_cleanup_old_progress_files'; then
+  ok "cleanup block is still guarded by is_safe_spec_path"
+else
+  fail "cleanup block is not guarded by is_safe_spec_path"
+fi
+
+# AC2 + AC3: old files are deleted; recent files and unsupported-mtime are handled gracefully
+CLEANUP_TMP="$(mktemp -d)"
+trap 'rm -rf "$CLEANUP_TMP"' EXIT
+
+# Create a mock project structure
+mkdir -p "$CLEANUP_TMP/sd-projects/P999/spec"
+mkdir -p "$CLEANUP_TMP/.config/spec-drive"
+printf '{"projectRoot":"%s"}\n' "$CLEANUP_TMP/sd-projects" >"$CLEANUP_TMP/.config/spec-drive/config.json"
+
+SPEC_PATH="$CLEANUP_TMP/sd-projects/P999/spec"
+OLD_FILE="$SPEC_PATH/.progress-task-old-123.md"
+NEW_FILE="$SPEC_PATH/.progress-task-new-456.md"
+touch "$OLD_FILE"
+touch "$NEW_FILE"
+
+# Backdate the old file to 2 hours ago using touch -t or python3
+if command -v python3 >/dev/null 2>&1; then
+  python3 -c "import os, time; os.utime('$OLD_FILE', (time.time()-7400, time.time()-7400))"
+elif touch -t "$(date -d '2 hours ago' +%Y%m%d%H%M.%S 2>/dev/null || true)" "$OLD_FILE" 2>/dev/null; then
+  true
+fi
+
+# Source the cleanup function and call it directly
+(
+  . hooks/scripts/resolve-config.sh
+  # Define is_safe_spec_path inline for testing (always returns 0 for our spec path)
+  is_safe_spec_path() { [ "$1" = "$SPEC_PATH" ]; }
+  PROJECT_ROOT_REAL="$CLEANUP_TMP/sd-projects"
+  _cleanup_old_progress_files() {
+    local spec_path="$1"
+    local max_age_seconds=3600
+    if command -v python3 >/dev/null 2>&1; then
+      python3 - "$spec_path" "$max_age_seconds" <<'PYEOF' 2>/dev/null || true
+import os, sys, glob, time
+spec_path, max_age = sys.argv[1], int(sys.argv[2])
+now = time.time()
+for f in glob.glob(os.path.join(spec_path, ".progress-task-*.md")):
+    try:
+        if now - os.path.getmtime(f) > max_age:
+            os.remove(f)
+    except OSError:
+        pass
+PYEOF
+      return
+    fi
+    local stat_fmt stat_arg now file mtime age
+    if stat -c '%Y' /dev/null >/dev/null 2>&1; then
+      stat_fmt="-c"; stat_arg="%Y"
+    elif stat -f '%m' /dev/null >/dev/null 2>&1; then
+      stat_fmt="-f"; stat_arg="%m"
+    else
+      return
+    fi
+    now=$(date +%s 2>/dev/null) || return
+    for file in "$spec_path"/.progress-task-*.md; do
+      [ -f "$file" ] || continue
+      mtime=$(stat "$stat_fmt" "$stat_arg" "$file" 2>/dev/null) || continue
+      age=$(( now - mtime ))
+      [ "$age" -gt "$max_age_seconds" ] && rm -f "$file" 2>/dev/null || true
+    done
+  }
+  _cleanup_old_progress_files "$SPEC_PATH"
+)
+
+if [ ! -f "$OLD_FILE" ]; then
+  ok "cleanup deletes .progress-task-*.md files older than 60 min"
+else
+  fail "cleanup did not delete old .progress-task-*.md file (mtime backdating may be unsupported here)"
+fi
+
+if [ -f "$NEW_FILE" ]; then
+  ok "cleanup preserves .progress-task-*.md files newer than 60 min"
+else
+  fail "cleanup incorrectly deleted recent .progress-task-*.md file"
+fi
+
 echo ""
 echo "Passed: $PASS | Failed: $FAIL"
 

@@ -237,8 +237,54 @@ EOF
 fi
 
 # --- Cleanup orphaned .progress-task-*.md files older than 60 min ---
+# Portable: avoid GNU-only find -mmin (not available on macOS/BSD).
+# Strategy: list matching files, check mtime via python3 (preferred) or stat,
+# fall through silently if neither is available.
 if is_safe_spec_path "$SPEC_PATH"; then
-    find "$SPEC_PATH" -name ".progress-task-*.md" -mmin +60 -delete 2>/dev/null || true
+    _cleanup_old_progress_files() {
+        local spec_path="$1"
+        local max_age_seconds=3600
+        local file mtime now age
+
+        # python3 path: most reliable cross-platform
+        if command -v python3 >/dev/null 2>&1; then
+            python3 - "$spec_path" "$max_age_seconds" <<'PYEOF' 2>/dev/null || true
+import os, sys, glob, time
+spec_path, max_age = sys.argv[1], int(sys.argv[2])
+now = time.time()
+for f in glob.glob(os.path.join(spec_path, ".progress-task-*.md")):
+    try:
+        if now - os.path.getmtime(f) > max_age:
+            os.remove(f)
+    except OSError:
+        pass
+PYEOF
+            return
+        fi
+
+        # stat fallback: Linux uses -c %Y, macOS uses -f %m
+        local stat_fmt
+        if stat -c '%Y' /dev/null >/dev/null 2>&1; then
+            stat_fmt="-c"
+            stat_arg="%Y"
+        elif stat -f '%m' /dev/null >/dev/null 2>&1; then
+            stat_fmt="-f"
+            stat_arg="%m"
+        else
+            return  # no supported mtime tool — skip gracefully
+        fi
+
+        now=$(date +%s 2>/dev/null) || return
+        for file in "$spec_path"/.progress-task-*.md; do
+            [ -f "$file" ] || continue
+            mtime=$(stat "$stat_fmt" "$stat_arg" "$file" 2>/dev/null) || continue
+            age=$(( now - mtime ))
+            if [ "$age" -gt "$max_age_seconds" ]; then
+                rm -f "$file" 2>/dev/null || true
+            fi
+        done
+    }
+    _cleanup_old_progress_files "$SPEC_PATH"
 fi
 
 exit 0
