@@ -32,7 +32,7 @@ Each agent reads predecessor files directly via Read tool. No context summaries,
 
 In **normal mode** (default), `awaitingApproval=true` is set after each analysis phase completes. The user must review the artifact and explicitly invoke the next phase command.
 
-In **auto mode** (`--auto` flag), approval gates are bypassed. The workflow proceeds through all phases automatically. Phase checklists are still enforced — if a checklist fails, auto mode stops with an error.
+In **auto mode** (`--auto` flag), spec-definition phases still stop for review. Auto mode is only allowed to continue automatically once the workflow has already reached a validated task plan and enters execution. Phase checklists are still enforced — if a checklist fails, auto mode stops with an error.
 
 ## Phase Transition Rules
 
@@ -50,7 +50,7 @@ State is tracked in `.spec-drive-state.json` within the project's spec/ director
 
 - `phase`: Current phase (enum of the 6 phases)
 - `awaitingApproval`: Whether the user needs to review before proceeding
-- `mode`: "normal" (default) or "auto" (bypasses approval gates)
+- `mode`: "normal" (default) or "auto" (allows autonomous execution after task planning)
 - `taskIndex`: Current task during execution phase
 - `taskIteration`: Retry count for current task (resets per task)
 - `globalIteration`: Total loop iterations across all tasks

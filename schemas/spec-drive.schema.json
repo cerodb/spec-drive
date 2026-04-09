@@ -23,7 +23,7 @@
       "type": "string",
       "enum": ["normal", "auto"],
       "default": "normal",
-      "description": "Execution mode. normal = approval gates between phases. auto = full autonomous cycle."
+      "description": "Execution mode. normal = approval gates between phases. auto = definition phases still stop for review, then execution may proceed autonomously after task planning."
     },
     "taskIndex": {
       "type": "integer",

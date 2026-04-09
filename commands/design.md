@@ -111,7 +111,12 @@ Check the `mode` field from the state:
   Review the design, then run /spec-drive:tasks to proceed.
   ```
 
-- **auto mode** (`mode: "auto"`): Set `awaitingApproval: false` and immediately invoke `/spec-drive:tasks` to continue the pipeline.
+- **auto mode** (`mode: "auto"`): Still set `awaitingApproval: true` and stop. Auto mode does not bypass review during scope-definition phases. Output:
+  ```
+  Design generated: {basePath}/design.md
+  Auto mode pauses at definition checkpoints.
+  Review the design, then run /spec-drive:tasks to proceed.
+  ```
 
 ## Error Handling
 
@@ -133,5 +138,5 @@ On success (auto mode):
 Phase checklist: PASSED (requirements -> design)
 Delegated to: architect agent
 Output: {basePath}/design.md
-Status: Auto mode — continuing to tasks phase...
+Status: Auto mode paused at definition checkpoint. Review design, then run /spec-drive:tasks.
 ```

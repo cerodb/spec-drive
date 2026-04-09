@@ -99,8 +99,12 @@ When ready, run: /spec-drive:requirements
 ```
 
 **Auto mode**:
-1. Do NOT set awaitingApproval
-2. Immediately invoke the next phase:
+1. Set `awaitingApproval = true`
+2. Stop after research exactly like normal mode
+3. Tell the user:
 ```
-Invoke: /spec-drive:requirements
+Research complete. Review research.md at $basePath/research.md
+
+Auto mode does not bypass definition-phase review gates.
+When ready, run: /spec-drive:requirements
 ```

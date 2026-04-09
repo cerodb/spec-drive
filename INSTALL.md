@@ -199,6 +199,23 @@ Whichever runtime you use, the minimum smoke test is:
 
 4. Confirm `research.md` appears and the state file is updated.
 
+## Workflow Guardrail
+
+`--auto` is not a license to bypass project-definition checkpoints.
+
+Current intended behavior:
+
+- research stops for review
+- requirements stops for review
+- design stops for review
+- tasks may hand off directly into `/spec-drive:implement`
+
+Reason:
+
+- scope and project identity are still being clarified during definition phases
+- each phase uses a different specialist role
+- pushing through all phases automatically can compound the wrong interpretation before a human sees it
+
 ## Safety Expectations
 
 The current repo already includes guardrails for:

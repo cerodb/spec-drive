@@ -66,3 +66,41 @@ status: active
 - `spec-drive` now resolves config only from:
   - workspace `.spec-drive-config.json`
   - XDG config at `${XDG_CONFIG_HOME:-$HOME/.config}/spec-drive/config.json`
+
+## 2026-04-09 — Process quality issue: over-eager phase execution
+
+- Gabriel flagged an important process problem in the plugin workflow:
+  - `spec-drive` can push through idea → research → requirements → design → tasks too aggressively without enough scope validation
+  - and it may not be respecting the right "agent hat" or phase discipline at each step
+- Current interpretation:
+  - this is not just a user-preference issue
+  - it is a real workflow quality problem when project scope is still ambiguous
+- Practical rule captured from this discussion:
+  - when scope is still being defined, the system should not run multiple spec phases in one uninterrupted burst without explicit alignment on project identity
+  - phase advancement speed must depend on scope clarity, not only on the presence of enough text to keep writing
+- This issue strengthens the case for a proper coordinator discipline in spec-drive / `P291`:
+  - clearer phase ownership
+  - clearer role separation
+  - explicit checkpoints before continuing into downstream artifacts
+
+## 2026-04-09 — Canon tightened: auto mode must not skip definition checkpoints
+
+- Documented a stricter interpretation of `--auto` across the operational docs:
+  - research, requirements, and design must still pause for review
+  - only the transition from task plan into execution may continue autonomously
+- Reason for the change:
+  - the old wording made it too easy for one runtime to sprint through multiple specialist phases while project identity was still being clarified
+  - that is exactly the failure mode Gabriel flagged in live use
+- This update is the canonical process correction first.
+- Runtime enforcement can be hardened next, but the docs and command contract should no longer imply that full-definition auto-chaining is desirable.
+
+## 2026-04-09 — Marketplace sync pending from corrected auto-mode canon
+
+- The source repo now carries a corrected process contract for `--auto`:
+  - definition phases do not auto-chain blindly
+  - execution may still continue autonomously after task planning
+- The packaged marketplace copy in `cerodb-plugins` was found to be stale and still described `--auto` as a full uninterrupted chain.
+- Next release action:
+  - publish the corrected source as `1.0.2`
+  - sync the packaged plugin in `cerodb-plugins`
+  - keep source and marketplace copies aligned again
