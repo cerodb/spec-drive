@@ -3,6 +3,32 @@
   "$id": "https://spec-drive/schemas/spec-drive-state.json",
   "title": ".spec-drive-state.json",
   "description": "State file that tracks spec-drive execution progress. Committed to git, collocated with spec artifacts.",
+  "$comment": "Active project registry: ~/.spec-drive-active.json — format: {activePath: string, name: string, switchedAt: string (ISO 8601)}. Written by /spec-drive:switch. If absent, commands fall back to cwd scan for .spec-drive-state.json.",
+  "$defs": {
+    "activeRegistry": {
+      "$id": "https://spec-drive/schemas/spec-drive-active.json",
+      "title": "~/.spec-drive-active.json",
+      "description": "User-scoped active project registry written by /spec-drive:switch. Shared across all terminal sessions and CLIs. Delete to revert to cwd detection.",
+      "type": "object",
+      "required": ["activePath", "name", "switchedAt"],
+      "properties": {
+        "activePath": {
+          "type": "string",
+          "description": "Absolute path to the spec directory (basePath from .spec-drive-state.json)"
+        },
+        "name": {
+          "type": "string",
+          "description": "Project name from .spec-drive-state.json"
+        },
+        "switchedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 timestamp of when /spec-drive:switch was last called"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
   "type": "object",
   "required": ["name", "basePath", "phase"],
   "properties": {

@@ -18,7 +18,7 @@ fail() {
   echo "  FAIL: $1"
 }
 
-COMMANDS=(new research requirements design tasks-cmd implement status cancel help list)
+COMMANDS=(new research requirements design tasks-cmd implement status cancel help list switch)
 
 echo "=== Spec-Drive Commands Test ==="
 
@@ -101,6 +101,50 @@ if [ -f "$LIST_FILE" ]; then
   fi
 else
   fail "commands/list.md does not exist"
+fi
+
+echo "-- Checking switch command completeness..."
+SWITCH_FILE="commands/switch.md"
+if [ -f "$SWITCH_FILE" ]; then
+  SWITCH_FM=$(sed -n '2,/^---$/p' "$SWITCH_FILE" | sed '$d')
+
+  if echo "$SWITCH_FM" | grep -q '^description:'; then
+    ok "switch.md has description frontmatter key"
+  else
+    fail "switch.md missing description frontmatter key"
+  fi
+
+  if echo "$SWITCH_FM" | grep -q '^argument-hint:'; then
+    ok "switch.md has argument-hint frontmatter key"
+  else
+    fail "switch.md missing argument-hint frontmatter key"
+  fi
+
+  if echo "$SWITCH_FM" | grep -q '^allowed-tools:'; then
+    ok "switch.md has allowed-tools frontmatter key"
+  else
+    fail "switch.md missing allowed-tools frontmatter key"
+  fi
+
+  if grep -q '~/.spec-drive-active.json' "$SWITCH_FILE"; then
+    ok "switch.md references ~/.spec-drive-active.json"
+  else
+    fail "switch.md does not reference ~/.spec-drive-active.json"
+  fi
+
+  if grep -q 'activePath' "$SWITCH_FILE" && grep -q 'switchedAt' "$SWITCH_FILE"; then
+    ok "switch.md documents registry format: activePath and switchedAt fields"
+  else
+    fail "switch.md missing registry format documentation (activePath/switchedAt)"
+  fi
+
+  if grep -q 'cwd' "$SWITCH_FILE"; then
+    ok "switch.md documents cwd fallback"
+  else
+    fail "switch.md missing cwd fallback documentation"
+  fi
+else
+  fail "commands/switch.md does not exist"
 fi
 
 echo "-- Checking cancel safety guidance..."
