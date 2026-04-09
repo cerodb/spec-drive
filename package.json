@@ -4,11 +4,12 @@
   "description": "Spec-driven development: idea -> research -> requirements -> design -> tasks -> autonomous execution with quality gates.",
   "license": "MIT",
   "scripts": {
-    "test": "bash test/test-structure.sh && bash test/test-hooks.sh && bash test/test-commands.sh && bash test/test-schema.sh && bash test/test-cross-cli.sh",
+    "test": "bash test/test-structure.sh && bash test/test-hooks.sh && bash test/test-commands.sh && bash test/test-schema.sh && bash test/test-cross-cli.sh && bash test/test-smoke.sh",
     "test:structure": "bash test/test-structure.sh",
     "test:hooks": "bash test/test-hooks.sh",
     "test:commands": "bash test/test-commands.sh",
     "test:schema": "bash test/test-schema.sh",
-    "test:cross-cli": "bash test/test-cross-cli.sh"
+    "test:cross-cli": "bash test/test-cross-cli.sh",
+    "test:smoke": "bash test/test-smoke.sh"
   }
 }
