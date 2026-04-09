@@ -67,6 +67,11 @@
       "name": "help",
       "path": "commands/help.md",
       "description": "Show help for spec-drive commands and workflow"
+    },
+    {
+      "name": "switch",
+      "path": "commands/switch.md",
+      "description": "Switch the active spec-drive project and write ~/.spec-drive-active.json"
     }
   ]
 }
