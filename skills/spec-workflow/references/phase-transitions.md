@@ -18,15 +18,21 @@ Valid state transitions for the spec-drive workflow. Each transition is triggere
 
 ## Auto Mode Transitions
 
-When `mode: "auto"`, the stop-watcher hook continues through phase transitions automatically:
+When `mode: "auto"`, automatic continuation is intentionally limited:
 
 | From Phase | Behavior |
 |-----------|----------|
-| research (complete) | Immediately invoke `/spec-drive:requirements` |
-| requirements (complete) | Immediately invoke `/spec-drive:design` |
-| design (complete) | Immediately invoke `/spec-drive:tasks` |
-| tasks (complete) | Immediately invoke `/spec-drive:implement` |
+| research (complete) | Stop and require review before `/spec-drive:requirements` |
+| requirements (complete) | Stop and require review before `/spec-drive:design` |
+| design (complete) | Stop and require review before `/spec-drive:tasks` |
+| tasks (complete) | `/spec-drive:implement` may start automatically |
 | execution | Continue task loop as normal |
+
+Rationale:
+
+- scope clarification is still happening during research, requirements, and design
+- phase ownership changes across specialist agents
+- auto-chaining definition phases makes it too easy to drift into a wrong project identity before a human notices
 
 Phase checklists are still validated at each transition. If a checklist fails, auto mode stops with an error.
 

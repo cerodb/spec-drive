@@ -190,6 +190,12 @@ Or use auto mode:
 /spec-drive:new my-feature Build a small feature that does X --auto
 ```
 
+Important:
+
+- `--auto` does not mean "write idea, research, requirements, design, and tasks in one blind burst"
+- definition phases still pause for review
+- auto mode becomes autonomous only after `tasks.md` exists and execution begins
+
 ## Safety Notes
 
 This repo includes hardening for:

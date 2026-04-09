@@ -1,6 +1,6 @@
 {
   "name": "spec-drive",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Spec-driven development: idea -> research -> requirements -> design -> tasks -> autonomous execution with quality gates.",
   "author": {
     "name": "cerodb",

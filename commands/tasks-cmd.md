@@ -111,7 +111,7 @@ Check the `mode` field from the state:
   Review the task plan, then run /spec-drive:implement to start execution.
   ```
 
-- **auto mode** (`mode: "auto"`): Set `awaitingApproval: false` and immediately invoke `/spec-drive:implement` to begin autonomous task execution.
+- **auto mode** (`mode: "auto"`): Set `awaitingApproval: false` and immediately invoke `/spec-drive:implement` to begin autonomous task execution. This is the first point where auto mode may continue without an explicit human checkpoint.
 
 ## Error Handling
 
