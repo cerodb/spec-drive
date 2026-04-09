@@ -26,14 +26,14 @@ fi
 # Default project root (overridable via workspace or XDG config)
 PROJECT_ROOT="$(spec_drive_resolve_project_root "$CWD")"
 
-PROJECT_ROOT_REAL="$(readlink -f "$PROJECT_ROOT" 2>/dev/null || echo "$PROJECT_ROOT")"
+PROJECT_ROOT_REAL="$(portable_realpath "$PROJECT_ROOT")"
 
 is_safe_spec_path() {
     local candidate="$1"
     [ -n "$candidate" ] || return 1
     [ -d "$candidate" ] || return 1
     local resolved
-    resolved="$(readlink -f "$candidate" 2>/dev/null || echo "$candidate")"
+    resolved="$(portable_realpath "$candidate")"
     case "$resolved" in
         "$PROJECT_ROOT_REAL"/*/spec) return 0 ;;
         *) return 1 ;;

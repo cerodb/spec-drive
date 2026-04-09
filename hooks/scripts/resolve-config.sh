@@ -6,6 +6,29 @@
 
 set -euo pipefail
 
+# portable_realpath — resolve absolute canonical path without GNU readlink -f.
+# Works on Linux (GNU coreutils), macOS (BSD), and any system with python3.
+# Falls back to cd/pwd -P for pure-shell resolution.
+portable_realpath() {
+    local path="$1"
+    if command -v python3 >/dev/null 2>&1; then
+        python3 -c "import os, sys; print(os.path.realpath(sys.argv[1]))" "$path"
+    elif command -v realpath >/dev/null 2>&1; then
+        realpath "$path"
+    elif [ -d "$path" ]; then
+        (cd "$path" && pwd -P)
+    else
+        local dir base
+        dir="$(dirname "$path")"
+        base="$(basename "$path")"
+        if [ -d "$dir" ]; then
+            echo "$(cd "$dir" && pwd -P)/$base"
+        else
+            printf '%s\n' "$path"
+        fi
+    fi
+}
+
 spec_drive_expand_path() {
     local raw="$1"
     case "$raw" in
