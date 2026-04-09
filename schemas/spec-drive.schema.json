@@ -110,6 +110,14 @@
       },
       "required": ["startIndex", "endIndex", "taskIndices", "isParallel"]
     },
+    "requirementsSha": {
+      "type": "string",
+      "description": "SHA of requirements.md at time tasks.md was generated"
+    },
+    "designSha": {
+      "type": "string",
+      "description": "SHA of design.md at time tasks.md was generated"
+    },
     "taskResults": {
       "type": "object",
       "description": "Results keyed by task index. Tracks status and errors for completed/failed tasks.",
