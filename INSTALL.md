@@ -175,6 +175,38 @@ Recommended approach:
 
 Treat both Kiro and Coda support as manual adapter ports in `v1.0.0`, not native packaged installs.
 
+## Available Commands (v1.1)
+
+After installation, the following commands are available:
+
+| Command | Description |
+|---|---|
+| `/spec-drive:new` | Create a new spec-driven project |
+| `/spec-drive:research` | Run the research phase |
+| `/spec-drive:requirements` | Generate requirements from research |
+| `/spec-drive:design` | Generate design from requirements |
+| `/spec-drive:tasks` | Generate task list from design |
+| `/spec-drive:implement` | Start or resume autonomous execution |
+| `/spec-drive:status` | Show current phase and progress |
+| `/spec-drive:list` | List all spec-drive projects with phase and last-activity |
+| `/spec-drive:switch` | Switch the active spec-drive project |
+| `/spec-drive:refactor` | Iterate coherently on spec artifacts after discovering design flaws during execution |
+| `/spec-drive:cancel` | Cancel and optionally remove the active project |
+| `/spec-drive:help` | Show help and workflow overview |
+
+To navigate multiple projects:
+
+```text
+/spec-drive:list
+/spec-drive:switch
+```
+
+To update spec artifacts after discovering design issues mid-execution:
+
+```text
+/spec-drive:refactor
+```
+
 ## Post-Install Smoke Test
 
 Whichever runtime you use, the minimum smoke test is:
