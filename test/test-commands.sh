@@ -18,7 +18,7 @@ fail() {
   echo "  FAIL: $1"
 }
 
-COMMANDS=(new research requirements design tasks-cmd implement status cancel help list switch)
+COMMANDS=(new research requirements design tasks-cmd implement status cancel help list switch refactor)
 
 echo "=== Spec-Drive Commands Test ==="
 
@@ -145,6 +145,62 @@ if [ -f "$SWITCH_FILE" ]; then
   fi
 else
   fail "commands/switch.md does not exist"
+fi
+
+echo "-- Checking refactor command completeness..."
+REFACTOR_FILE="commands/refactor.md"
+if [ -f "$REFACTOR_FILE" ]; then
+  REFACTOR_FM=$(sed -n '2,/^---$/p' "$REFACTOR_FILE" | sed '$d')
+
+  if echo "$REFACTOR_FM" | grep -q '^description:'; then
+    ok "refactor.md has description frontmatter key"
+  else
+    fail "refactor.md missing description frontmatter key"
+  fi
+
+  if echo "$REFACTOR_FM" | grep -q '^argument-hint:'; then
+    ok "refactor.md has argument-hint frontmatter key"
+  else
+    fail "refactor.md missing argument-hint frontmatter key"
+  fi
+
+  if echo "$REFACTOR_FM" | grep -q '^allowed-tools:'; then
+    ok "refactor.md has allowed-tools frontmatter key"
+  else
+    fail "refactor.md missing allowed-tools frontmatter key"
+  fi
+
+  if grep -q '\.progress\.md' "$REFACTOR_FILE"; then
+    ok "refactor.md references .progress.md as source for execution learnings"
+  else
+    fail "refactor.md does not reference .progress.md"
+  fi
+
+  if grep -q 'requirements.*design.*tasks' "$REFACTOR_FILE" || (grep -q 'requirements' "$REFACTOR_FILE" && grep -q 'design' "$REFACTOR_FILE" && grep -q 'tasks' "$REFACTOR_FILE"); then
+    ok "refactor.md specifies update sequence: requirements, design, tasks"
+  else
+    fail "refactor.md missing sequential update order (requirements -> design -> tasks)"
+  fi
+
+  if grep -q 'requirementsSha' "$REFACTOR_FILE" && grep -q 'designSha' "$REFACTOR_FILE"; then
+    ok "refactor.md references requirementsSha and designSha staleness detection"
+  else
+    fail "refactor.md missing requirementsSha/designSha staleness detection"
+  fi
+
+  if grep -q 'CHANGELOG' "$REFACTOR_FILE"; then
+    ok "refactor.md instructs recording changes in .progress.md CHANGELOG section"
+  else
+    fail "refactor.md missing CHANGELOG section reference in .progress.md"
+  fi
+
+  if grep -q 'phase-transitions' "$REFACTOR_FILE"; then
+    ok "refactor.md references phase-transitions.md for valid navigation"
+  else
+    fail "refactor.md does not reference phase-transitions.md"
+  fi
+else
+  fail "commands/refactor.md does not exist"
 fi
 
 echo "-- Checking cancel safety guidance..."
