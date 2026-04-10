@@ -53,7 +53,7 @@ Read `.spec-drive-state.json`. Extract:
 
 Check phase validity against `skills/spec-workflow/references/phase-transitions.md`.
 
-Refactor is valid from any phase after **requirements** (requirements, design, tasks, or execution).
+Refactor is valid from any phase `>= requirements` (`requirements`, `design`, `tasks`, `execution`, or `completed`).
 
 If phase is "idea" or "research":
 ```

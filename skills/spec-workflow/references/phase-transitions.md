@@ -52,8 +52,11 @@ Commands reject transitions that skip phases or go backwards:
 
 | Phase | Trigger |
 |-------|---------|
-| `completed` | All tasks done; new learnings discovered after the fact |
+| `requirements` | Scope or constraint change discovered after requirements were written |
+| `design` | Design flaw discovered before task planning completed |
+| `tasks` | Task plan needs regeneration after design/requirement changes |
 | `execution` | Mid-cycle discovery — learnings accumulate while tasks are running |
+| `completed` | All tasks done; new learnings discovered after the fact |
 
 Any phase `>= requirements` (i.e., `requirements`, `design`, `tasks`, `execution`, or `completed`) is a valid entry point. Running refactor from `research` or `idea` is rejected because no artifact exists yet to update.
 
