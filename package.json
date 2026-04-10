@@ -1,6 +1,6 @@
 {
   "name": "spec-drive",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Spec-driven development: idea -> research -> requirements -> design -> tasks -> autonomous execution with quality gates.",
   "license": "MIT",
   "scripts": {
