@@ -1,6 +1,7 @@
 node_modules/
 .DS_Store
 *.log
+progress-*.txt
 
 # Development artifacts (debate transcripts)
 agents/adversarial/
