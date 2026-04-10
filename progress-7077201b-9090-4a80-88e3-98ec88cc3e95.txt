@@ -196,3 +196,50 @@
     - phase-transitions.md navigation reference
   - npm test exits 0: 196 total assertions, 0 failures (47 structure + 23 hooks + 70 commands + 20 schema + 26 cross-cli + 10 smoke)
 - Tests: bash test/test-commands.sh exits 0; bash test/test-structure.sh exits 0; npm test exits 0 (196 tests)
+
+### US12: Update phase-transitions.md to include the refactor path
+- Status: DONE
+- Commit: ba70257
+- Changes:
+  - skills/spec-workflow/references/phase-transitions.md: Added ## Refactor section documenting:
+    - Valid entry states table: completed (post-completion learnings) and execution (mid-cycle discovery)
+    - Requirement that any phase >= requirements is valid entry; research/idea rejected (no artifacts)
+    - Update loop: requirements.md → design.md → tasks.md → (resume execution) with rationale for strict order
+    - Staleness re-check trigger: requirementsSha/designSha comparison; SHA generation via git hash-object / sha256sum fallback
+    - Phase reset rule: if entry was execution, phase resets to tasks after refactor so implement re-validates
+  - test/test-structure.sh: Added 4 new assertions in "Checking phase-transitions.md Refactor section..." block:
+    - AC1: `## Refactor` heading exists in phase-transitions.md
+    - AC2: completed and execution entry states documented
+    - AC3: requirements.md, design.md, tasks.md all referenced in update loop
+    - AC4: requirementsSha and designSha staleness trigger documented
+- Tests: npm test exits 0 (200 total assertions, 0 failures — 51 structure + 23 hooks + 70 commands + 20 schema + 26 cross-cli + 10 smoke)
+
+### US13: Update README and INSTALL for v1.1 command surface and macOS support
+- Status: DONE
+- Commit: b77ad09
+- Changes:
+  - README.md: Added "## Commands" table with all 12 commands including list, switch, refactor. Added "## macOS Compatibility" section documenting portable_realpath() and portable mtime check, macOS prerequisites (jq via brew), and CI matrix note.
+  - INSTALL.md: Added "## Available Commands (v1.1)" section with full 12-command table including list, switch, and refactor, plus usage examples for list/switch and refactor.
+  - package.json: Bumped version from 1.0.2 → 1.1.0
+  - .claude-plugin/plugin.json: Bumped version from 1.0.2 → 1.1.0
+- Tests: npm test exits 0 (200 total assertions, 0 failures — 51 structure + 23 hooks + 70 commands + 20 schema + 26 cross-cli + 10 smoke)
+
+### US14: Final release validation: full suite run and v1.1.0 go/no-go
+- Status: DONE
+- Commit: (this commit)
+- Changes:
+  - Full test suite run: 6 suites, 200 total assertions, 0 failures
+    - test-structure.sh: 51 passed (includes refactor section in phase-transitions.md)
+    - test-hooks.sh: 23 passed (includes portable_realpath and no find -mmin)
+    - test-commands.sh: 70 passed (includes list/switch/refactor completeness)
+    - test-schema.sh: 20 passed (includes requirementsSha/designSha optional fields)
+    - test-cross-cli.sh: 26 passed
+    - test-smoke.sh: 10 passed
+  - AC1: npm test exits 0 ✓
+  - AC2: No unguarded `readlink -f` in hooks/ — only a comment line ✓
+  - AC3: No `-mmin` flags in hooks/ — only a comment line ✓
+  - AC4: plugin.json version == package.json version == 1.1.0 ✓
+  - AC5: README.md contains list, switch, refactor command names (lines 192-194) ✓
+  - AC6: npm test exits 0 ✓
+  - GO/NO-GO: **GO** — v1.1.0 ready to tag and publish
+- Tests: npm test exits 0 (200 total assertions, 0 failures — 51 structure + 23 hooks + 70 commands + 20 schema + 26 cross-cli + 10 smoke)
