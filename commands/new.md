@@ -1,6 +1,6 @@
 ---
 description: Create a new spec-driven project with idea.md and start research
-argument-hint: "<name> [goal] [--auto]"
+argument-hint: "<name> [goal] [--auto] [--deep]"
 allowed-tools: [Read, Write, Bash, Glob, Agent]
 ---
 
@@ -12,10 +12,11 @@ Extract from `$ARGUMENTS`:
 - **name** (required): first token — the project name (e.g., `my-api` or `P300-my-api`)
 - **goal** (optional): remaining text before any flags — the project vision
 - **--auto** flag: if present, set mode to `auto` (bypass approval gates between phases)
+- **--deep** flag: if present, request a deeper research pass during the research phase
 
 If `$ARGUMENTS` is empty or name is missing, tell the user:
 ```
-Usage: /spec-drive:new <name> [goal] [--auto]
+Usage: /spec-drive:new <name> [goal] [--auto] [--deep]
 Example: /spec-drive:new my-api Build a REST API for user management
 ```
 Stop and wait for user input.
@@ -141,6 +142,7 @@ Create the initial state file:
   "basePath": "$PROJECT_ROOT/<name>/spec",
   "phase": "research",
   "mode": "<auto|normal>",
+  "researchDepth": "<deep|standard>",
   "taskIndex": 0,
   "totalTasks": 0,
   "taskIteration": 1,
@@ -153,6 +155,7 @@ Create the initial state file:
 ```
 
 - Set `mode` to `"auto"` if `--auto` flag was present, otherwise `"normal"`
+- Set `researchDepth` to `"deep"` if `--deep` flag was present, otherwise `"standard"`
 - Write to `$PROJECT_ROOT/<name>/spec/.spec-drive-state.json`
 
 ## Delegate to Researcher
@@ -168,6 +171,7 @@ Task tool:
   prompt: |
     basePath: $PROJECT_ROOT/<name>/spec
     projectName: <name>
+    researchDepth: <deep|standard>
 
     Read idea.md at the basePath and produce research.md following your research protocol.
 ```
@@ -207,3 +211,7 @@ This command creates:
 - `<project>/spec/.progress.md` — progress tracker
 - `<project>/spec/.spec-drive-state.json` — execution state
 - `<project>/spec/research.md` — via researcher agent delegation
+
+Behavior flags:
+- `--auto` — keeps later execution more autonomous, but does **not** bypass definition-phase review gates
+- `--deep` — requests a more exhaustive research pass before requirements

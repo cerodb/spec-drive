@@ -118,6 +118,31 @@
       "type": "string",
       "description": "SHA of design.md at time tasks.md was generated"
     },
+    "coordinator": {
+      "type": "object",
+      "description": "Lightweight coordinator state for early-phase orchestration decisions",
+      "properties": {
+        "active": {
+          "type": "boolean",
+          "description": "Whether a coordinator-managed subflow is currently active"
+        },
+        "mode": {
+          "type": "string",
+          "enum": ["sequential", "clarification", "research"],
+          "description": "Current coordinator path or fallback mode"
+        },
+        "reason": {
+          "type": "string",
+          "description": "Why the coordinator activated or why it remained/degraded to sequential flow"
+        },
+        "degraded": {
+          "type": "boolean",
+          "description": "Whether active coordination degraded back to sequential flow"
+        }
+      },
+      "required": ["active", "mode", "reason", "degraded"],
+      "additionalProperties": false
+    },
     "taskResults": {
       "type": "object",
       "description": "Results keyed by task index. Tracks status and errors for completed/failed tasks.",

@@ -1,16 +1,16 @@
 ---
 description: Generate requirements from research findings
 argument-hint: ""
-allowed-tools: [Read, Write, Bash, Glob, Agent]
+allowed-tools: [Read, Write, Bash, Glob, Agent, AskUserQuestion]
 ---
 
 # /spec-drive:requirements
 
-Generate structured requirements from research findings by delegating to the product-manager agent.
+Generate structured requirements from research findings by acting as a lightweight coordinator, then delegating to the product-manager agent.
 
 ## When Invoked
 
-The user has completed the research phase and wants to produce requirements.md.
+The user has completed the research phase and wants to produce requirements.md. This command should also decide whether targeted clarification is needed before requirements are delegated.
 
 ## Execution Flow
 
@@ -77,7 +77,56 @@ Validate the **research -> requirements** checklist:
 If ANY checklist item fails, stop immediately. Output the specific failure message and suggested fix. Do NOT proceed to agent delegation.
 </mandatory>
 
-### Step 4: Delegate to Product-Manager Agent
+### Step 4: Coordinator Preflight
+
+Before delegating to the product-manager, run a coordinator preflight to decide whether this requirements pass should proceed sequentially or pause for targeted clarification.
+
+Delegate the preflight to the `spec-drive:coordinator` agent via the Agent tool:
+
+```
+Agent: spec-drive:coordinator
+
+Run a coordinator preflight for the project at basePath: {basePath}
+phase: requirements
+
+Read idea.md, research.md, .spec-drive-state.json, and .progress.md if it exists.
+Apply the ambiguity signal scoring and return the structured COORDINATOR_OUTCOME
+block. If the outcome is clarify_first, run the clarification subphase via
+AskUserQuestion, record Q/A in .progress.md per the D2 block format, and return.
+If the outcome is block_and_escalate, record the block in .progress.md and return.
+```
+
+The coordinator agent owns:
+
+- state updates to `.spec-drive-state.json` under the `coordinator` object
+- `### Coordinator Clarification` block writes to `.progress.md`
+- running the `AskUserQuestion` loop when clarification is needed
+
+This command parses the coordinator's output and acts on it. Four outcomes matter:
+
+1. **`continue_sequential`** — proceed directly to delegation in Step 5. State already records `coordinator.active=false, mode=sequential, reason=no_ambiguity_signals`.
+
+2. **`clarify_first`** with `Outcome: continue` — the coordinator ran clarification, the user answered, and the decisions are already recorded in `.progress.md`. Proceed to Step 5. The product-manager will read the clarification block during its own input phase.
+
+3. **`clarify_first`** with `Outcome: block` — the clarification loop ran but the user skipped or answers surfaced high-stakes conflict. Stop and tell the user:
+   ```
+   Coordinator blocked requirements generation after clarification.
+   Reason: <reason from coordinator output>
+   Clarification block written to: {basePath}/.progress.md
+   Resolve the remaining conflict, then re-run /spec-drive:requirements.
+   ```
+   Do NOT delegate to the product-manager.
+
+4. **`block_and_escalate`** — ambiguity is already too high to even attempt clarification. Stop and tell the user:
+   ```
+   Coordinator blocked requirements generation before clarification.
+   Reason: <reason from coordinator output>
+   High-stakes ambiguity or conflict detected in research.md.
+   Resolve the flagged items, then re-run /spec-drive:requirements.
+   ```
+   Do NOT delegate to the product-manager.
+
+### Step 5: Delegate to Product-Manager Agent
 
 All checklist items passed. Delegate to the `spec-drive:product-manager` agent via the Agent tool:
 
@@ -86,12 +135,14 @@ Agent: spec-drive:product-manager
 
 Generate requirements for the project at basePath: {basePath}
 
-Read {basePath}/idea.md and {basePath}/research.md, then produce {basePath}/requirements.md following the requirements template structure with user stories, acceptance criteria (AC-X.Y format), functional requirements, non-functional requirements, out of scope, and glossary sections.
+Read {basePath}/idea.md and {basePath}/research.md. Also read {basePath}/.progress.md if it exists and use any "Coordinator Clarification" or equivalent explicit user-decision notes as binding clarification context.
+
+Then produce {basePath}/requirements.md following the requirements template structure with user stories, acceptance criteria (AC-X.Y format), functional requirements, non-functional requirements, out of scope, and glossary sections.
 ```
 
 Wait for the agent to complete and confirm that `{basePath}/requirements.md` was written.
 
-### Step 5: Update State
+### Step 6: Update State
 
 After the product-manager agent completes successfully:
 
@@ -99,9 +150,14 @@ After the product-manager agent completes successfully:
 2. Update the state:
    - Set `phase` to `"requirements"`
    - Set `awaitingApproval` to `true`
+   - If `coordinator` exists, set it to:
+     - `active: false`
+     - `mode: "sequential"`
+     - `reason: "requirements_generated"`
+     - `degraded: false`
 3. Write the updated state back to `{basePath}/.spec-drive-state.json`
 
-### Step 6: Handle Mode
+### Step 7: Handle Mode
 
 Check the `mode` field from the state:
 

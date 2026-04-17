@@ -95,6 +95,32 @@ Retry semantics:
 - if the failure is clearly environmental or infrastructural (`command not found`, `permission denied`, missing runtime, `connection refused`, syntax error in verify command, timeout, OOM, SIGKILL), fail fast instead of wasting all 3 retries
 - treat commands containing patterns such as `rm -rf`, `sudo`, `su -`, `git push`, `git push --force`, `git reset --hard`, `curl ... | sh`, `wget ... | sh`, `bash -c`, `sh -c`, or `eval` as unsafe by default unless the task explicitly proves they are sandboxed and repo-local
 
+Failure classification:
+- `env_error` — missing command, missing dependency, permission issue, timeout, broken runtime, port unavailable, infra unavailable
+- `logic_error` — implementation exists but verify/assertions fail
+- `verify_error` — the Verify command itself is malformed, stale, contradictory, or clearly testing the wrong thing
+- `design_error` — the task cannot be completed honestly without missing upstream design/requirements context
+
+Use the classification to decide behavior:
+- `env_error` or `verify_error` → fail fast, document precisely, do not burn all retries
+- `logic_error` → attempt up to 3 bounded fix/retry loops
+- `design_error` → stop, document the design gap, output `TASK_BLOCKED`
+
+Retry memory:
+- on each failed `logic_error` attempt, record a compact retry note in `.progress.md` under Learnings
+- include:
+  - task id/name
+  - failure classification
+  - exact failing command
+  - short summary of what was tried
+- on later retries, read those retry notes first so you do not repeat the same failed fix
+
+Progressive context escalation for retries:
+- first attempt: task block + explicitly consulted local files
+- second attempt: re-read the most relevant `design.md` section if the failure suggests a contract mismatch
+- third attempt: re-read the most relevant `requirements.md` section if the failure suggests the task itself may be underspecified or misinterpreted
+- if the failure still looks structural after that escalation, stop and classify it as `design_error` instead of thrashing
+
 ### Step 5: Commit
 
 <mandatory>
@@ -126,6 +152,7 @@ git commit -m "chore(spec-drive): update progress for task <task-id>"
 
 If verification fails permanently:
 - append the failing command
+- append the failure classification
 - append the files modified during the failed attempt
 - leave the task uncompleted
 
@@ -192,6 +219,7 @@ Never ask the user questions. You are fully autonomous. If information is missin
 - If the task is blocked by a source conflict or failed delegation, stop and output `TASK_BLOCKED`
 - If implementation touches files outside the declared `Files` list, stop and report the unexpected paths
 - If the Verify command is unsafe or clearly exceeds repo scope, stop and output `TASK_BLOCKED`
+- If a repeated failure is really `verify_error` or `design_error`, stop and report that honestly instead of pretending more retries would help
 
 ## Cross-CLI Portability
 

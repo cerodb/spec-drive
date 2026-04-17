@@ -42,6 +42,11 @@ All shell scripts avoid GNU-only extensions:
 
 Prerequisites on macOS: `bash`, `git`, `jq`. Install `jq` via Homebrew (`brew install jq`) if not already present.
 
+## Release Notes
+
+- Current release: `v1.2.0` (2026-04-17)
+- This release packages the successful P336 calibration pass: direct `tasks` command surface, tighter coordinator conflict scoring, and restored design/task compression.
+
 ## Validation Status
 
 - Local shell validation passes with `npm test` on Linux and macOS.
@@ -203,6 +208,12 @@ Start from a new project:
 /spec-drive:new my-feature Build a small feature that does X
 ```
 
+If the project needs a wider first pass:
+
+```text
+/spec-drive:new my-feature Build a small feature that does X --deep
+```
+
 Then continue phase by phase:
 
 ```text
@@ -218,6 +229,12 @@ Or use auto mode:
 ```text
 /spec-drive:new my-feature Build a small feature that does X --auto
 ```
+
+## Small but Important Runtime Notes
+
+- `--deep` asks the researcher for a broader discovery pass before requirements.
+- `/spec-drive:research` now performs a lightweight coordinator preflight before delegating research.
+- `/spec-drive:requirements` can pause for targeted clarification instead of silently guessing when research leaves important ambiguity unresolved.
 
 Important:
 

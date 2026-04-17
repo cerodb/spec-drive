@@ -141,6 +141,32 @@ for prop in name basePath phase; do
   fi
 done
 
+# 9. Coordinator state is optional but well-shaped
+echo "-- Coordinator state..."
+if jq -e '.properties.coordinator' "$SCHEMA" >/dev/null 2>&1; then
+  ok "has optional coordinator property"
+else
+  fail "missing optional coordinator property"
+fi
+
+if jq -e '.properties.coordinator.properties.active.type == "boolean"' "$SCHEMA" >/dev/null 2>&1; then
+  ok "coordinator.active is boolean"
+else
+  fail "coordinator.active missing or wrong type"
+fi
+
+if jq -e '.properties.coordinator.properties.mode.enum | index("clarification")' "$SCHEMA" >/dev/null 2>&1; then
+  ok "coordinator.mode enum includes clarification"
+else
+  fail "coordinator.mode missing clarification"
+fi
+
+if jq -e '.required | index("coordinator") | not' "$SCHEMA" >/dev/null 2>&1; then
+  ok "coordinator is optional"
+else
+  fail "coordinator should not be in required array"
+fi
+
 echo ""
 echo "Passed: $PASS | Failed: $FAIL"
 

@@ -20,8 +20,9 @@ Read these files before producing output:
 
 1. `{basePath}/idea.md` -- the project vision, constraints, and boundaries
 2. `{basePath}/research.md` -- external research, codebase analysis, feasibility assessment, open questions
+3. `{basePath}/.progress.md` -- optional coordinator clarification notes and explicit user decisions if present
 
-Both files are mandatory. If either is missing, stop and report the error.
+The first two files are mandatory. If either is missing, stop and report the error.
 
 Before proceeding, do a sufficiency check:
 - if either file is present but too thin to ground real requirements, stop and report what is insufficient
@@ -29,7 +30,9 @@ Before proceeding, do a sufficiency check:
 
 ## Source of Truth
 
-Treat `idea.md` and `research.md` as the only source of truth.
+Treat `idea.md` and `research.md` as the primary source of truth.
+
+If `.progress.md` contains an explicit `Coordinator Clarification` section or equivalent user-decision notes, treat that as valid clarification context that resolves ambiguity in the primary artifacts.
 
 Do not rely on:
 - prior conversation state
@@ -40,7 +43,7 @@ Do not rely on:
 
 ### 1. Identify Feature Areas
 
-Read idea.md's Vision and Constraints sections. Read research.md's Executive Summary and Feasibility Assessment. Group the project goals into distinct feature areas.
+Read idea.md's Vision and Constraints sections. Read research.md's Executive Summary and Feasibility Assessment. If `.progress.md` contains coordinator clarification decisions, use them to resolve ambiguous feature framing before grouping the project goals into distinct feature areas.
 
 Each feature area may produce one or more user stories.
 If one story would need more than 5-7 acceptance criteria, split it into smaller stories within the same feature area.
@@ -105,17 +108,25 @@ Rules:
 - Every NFR must be measurable with a specific target (e.g., "response time < 200ms", not "fast")
 - Pull constraints from idea.md's Constraints section and research.md's Feasibility Assessment
 - Include performance, security, compatibility, and maintainability as relevant
+- If the feature handles authentication, user data, logs, secrets, external network access, or sensitive operational state, security/privacy constraints are NOT optional: promote them into explicit NFRs even if the source material only implies them
 - If the source material implies an NFR but does not provide a concrete threshold, use `[TARGET TBD — requires stakeholder input]` and flag it as a dependency
+
+When deciding whether a security/privacy NFR is required, look for signals such as:
+- auth flows or identity
+- personal or user-generated data
+- logs, prompts, transcripts, or stored content
+- external APIs, webhooks, network calls, or tokens/secrets
+- local filesystem access that could expose private data
 
 ### 6. Define Boundaries
 
-**Out of Scope**: List features, integrations, or capabilities this project explicitly will NOT address. Pull from research.md's Open Questions and idea.md's Constraints. Be specific -- "database migration" not "other stuff".
+**Out of Scope**: List features, integrations, or capabilities this project explicitly will NOT address. Pull from research.md's Open Questions, idea.md's Constraints, and any explicit coordinator clarification decisions. Be specific -- "database migration" not "other stuff".
 
 **Dependencies**: List external systems, libraries, APIs, or preconditions required. For each, note whether it already exists or must be created.
 
 **Success Criteria**: Define 2-4 measurable outcomes that determine if the project succeeded. These are higher-level than ACs -- they answer "did this project achieve its goal?" Reference specific FR/NFR IDs and keep them development-time measurable, not vanity business metrics.
 
-**Unresolved Conflicts / Clarifications Needed**: If `idea.md` and `research.md` point in different directions, or the intent is too ambiguous to lock clean requirements, surface that explicitly instead of choosing silently.
+**Unresolved Conflicts / Clarifications Needed**: If `idea.md` and `research.md` point in different directions, or the intent is too ambiguous to lock clean requirements, surface that explicitly instead of choosing silently unless `.progress.md` already contains a coordinator clarification that resolves the ambiguity.
 
 ### 7. Add Glossary
 
@@ -187,6 +198,7 @@ Before finishing, verify all of this:
 - every user story has at least one `AC-X.Y`
 - every FR has a `Source`
 - every NFR has either a real target or `[TARGET TBD — requires stakeholder input]`
+- if the feature is data-sensitive, auth-sensitive, or network-sensitive, at least one explicit security/privacy NFR exists
 - every Success Criterion references valid FR/NFR IDs
 - any unresolved ambiguity is surfaced in `Unresolved Conflicts / Clarifications Needed`
 
@@ -195,5 +207,6 @@ Before finishing, verify all of this:
 - Do NOT invent requirements that aren't grounded in idea.md or research.md
 - Do NOT include implementation details -- requirements describe WHAT, not HOW
 - Do NOT skip the AC-X.Y format for any user story
+- Do NOT treat security/privacy constraints as optional when the feature touches sensitive data, auth, logs, or external integrations
 - Keep the document under 3000 words -- concise requirements are usable requirements
 - If research.md has unresolved Open Questions that block a requirement, note the dependency explicitly rather than guessing the answer

@@ -18,7 +18,7 @@ fail() {
   echo "  FAIL: $1"
 }
 
-COMMANDS=(new research requirements design tasks-cmd implement status cancel help list switch refactor)
+COMMANDS=(new research requirements design tasks implement status cancel help list switch refactor)
 
 echo "=== Spec-Drive Commands Test ==="
 
@@ -220,6 +220,110 @@ if grep -q 'mktemp "\${state_file}\.XXXXXX"' commands/research.md; then
   ok "research command uses same-directory temp file for state updates"
 else
   fail "research command missing same-directory temp file safety"
+fi
+
+echo "-- Checking coordinator agent..."
+COORDINATOR_FILE="agents/coordinator.md"
+if [ -f "$COORDINATOR_FILE" ]; then
+  ok "coordinator agent file exists"
+
+  FIRST_LINE=$(head -1 "$COORDINATOR_FILE")
+  if [ "$FIRST_LINE" = "---" ]; then
+    ok "coordinator agent has YAML frontmatter"
+  else
+    fail "coordinator agent missing YAML frontmatter"
+  fi
+
+  if grep -q '^name: coordinator' "$COORDINATOR_FILE"; then
+    ok "coordinator agent has name: coordinator"
+  else
+    fail "coordinator agent missing name: coordinator"
+  fi
+
+  if grep -q '^description:' "$COORDINATOR_FILE"; then
+    ok "coordinator agent has description field"
+  else
+    fail "coordinator agent missing description field"
+  fi
+
+  if grep -q 'continue_sequential' "$COORDINATOR_FILE" && \
+     grep -q 'clarify_first' "$COORDINATOR_FILE" && \
+     grep -q 'coordinate_research' "$COORDINATOR_FILE" && \
+     grep -q 'block_and_escalate' "$COORDINATOR_FILE"; then
+    ok "coordinator agent defines all four outcome names"
+  else
+    fail "coordinator agent missing one or more outcome names"
+  fi
+
+  if grep -q 'A1' "$COORDINATOR_FILE" && grep -q 'A5' "$COORDINATOR_FILE"; then
+    ok "coordinator agent documents ambiguity signals A1-A5"
+  else
+    fail "coordinator agent missing ambiguity signals A1-A5"
+  fi
+
+  if grep -q 'F1' "$COORDINATOR_FILE" && grep -q 'F4' "$COORDINATOR_FILE"; then
+    ok "coordinator agent documents fan-out signals F1-F4"
+  else
+    fail "coordinator agent missing fan-out signals F1-F4"
+  fi
+
+  if grep -q 'COORDINATOR_OUTCOME' "$COORDINATOR_FILE"; then
+    ok "coordinator agent defines structured output contract"
+  else
+    fail "coordinator agent missing COORDINATOR_OUTCOME output contract"
+  fi
+
+  if grep -q '### Coordinator Clarification' "$COORDINATOR_FILE"; then
+    ok "coordinator agent documents Coordinator Clarification block format"
+  else
+    fail "coordinator agent missing Coordinator Clarification block format"
+  fi
+else
+  fail "coordinator agent file $COORDINATOR_FILE does not exist"
+fi
+
+echo "-- Checking coordinator-first requirements behavior..."
+if grep -q 'spec-drive:coordinator' commands/requirements.md; then
+  ok "requirements command delegates to spec-drive:coordinator agent"
+else
+  fail "requirements command missing spec-drive:coordinator delegation"
+fi
+
+if grep -q 'clarify_first' commands/requirements.md; then
+  ok "requirements command handles clarify_first outcome"
+else
+  fail "requirements command missing clarify_first outcome handling"
+fi
+
+if grep -q 'block_and_escalate' commands/requirements.md; then
+  ok "requirements command handles block_and_escalate outcome"
+else
+  fail "requirements command missing block_and_escalate outcome handling"
+fi
+
+if grep -q 'coordinator' commands/requirements.md; then
+  ok "requirements command documents coordinator state handling"
+else
+  fail "requirements command missing coordinator state handling"
+fi
+
+echo "-- Checking coordinator-first research behavior..."
+if grep -q 'spec-drive:coordinator' commands/research.md; then
+  ok "research command delegates to spec-drive:coordinator agent"
+else
+  fail "research command missing spec-drive:coordinator delegation"
+fi
+
+if grep -q 'coordinate_research' commands/research.md; then
+  ok "research command handles coordinate_research outcome"
+else
+  fail "research command missing coordinate_research outcome handling"
+fi
+
+if grep -q 'Post-Validate' commands/research.md; then
+  ok "research command includes fan-out post-validation step"
+else
+  fail "research command missing fan-out post-validation step"
 fi
 
 echo ""
