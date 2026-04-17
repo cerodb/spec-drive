@@ -17,6 +17,12 @@ Preferred marketplace commands:
 /plugin install spec-drive@cerodb
 ```
 
+Optional ClawHub wrapper skill (requires the plugin to be installed first):
+
+```bash
+clawhub install spec-drive
+```
+
 ## Prerequisites
 
 Install these first:

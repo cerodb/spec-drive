@@ -78,6 +78,12 @@ Current marketplace install:
 /plugin install spec-drive@cerodb
 ```
 
+Optional ClawHub wrapper skill (install after the plugin if you want the wrapper entry point too):
+
+```bash
+clawhub install spec-drive
+```
+
 Current reality:
 
 - this source repo is still the development/source-of-truth repo
