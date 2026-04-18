@@ -61,8 +61,18 @@ For each finding, record: what it is, why it matters, source URL.
 
 Before deep codebase exploration, perform a bounded local discovery pass for sibling specs or prior artifacts that may overlap with this work.
 
+Use this explicit algorithm:
+1. resolve `repoRoot`
+2. if `repoRoot/specs/` exists, list directories under that path first
+3. exclude the current project itself
+4. for each candidate in the bounded sample:
+   - read `.progress.md` if present
+   - read `research.md` if present; else read `idea.md` if present
+   - extract only the original goal, executive summary, and strongest overlap signal
+5. keep only candidates that overlap with the current `idea.md`
+
 Look for:
-- sibling spec directories under the surrounding specs/projects area
+- sibling spec directories under `repoRoot/specs/`
 - nearby project logs, research notes, or handoff docs
 - prior artifacts that address the same CLI, integration surface, or product area
 
@@ -73,7 +83,9 @@ Keep this bounded:
 - if the surrounding portfolio is too large, say it was sampled rather than fully exhausted
 - if `researchDepth=deep`, widen the sample before summarizing, but still report only decision-relevant findings
 
-Record relevant prior-art hits in `research.md` with explicit file paths and why they matter.
+Always emit a `## Related Specs` section in `research.md`.
+- include explicit file paths and why each hit matters
+- if nothing relevant is found, write `none found`
 
 ### Step 3: Codebase Exploration
 
@@ -151,6 +163,9 @@ created: "<ISO timestamp>"
 
 ## External Research
 <!-- Per finding: what, why relevant, adopt/adapt/ignore, source URL -->
+
+## Related Specs
+<!-- Relevant sibling specs or `none found`, with explicit file paths and why they matter -->
 
 ## Codebase Analysis
 <!-- Existing patterns, conventions, dependencies, constraints with file paths -->

@@ -94,6 +94,20 @@ else
   FAIL=$((FAIL + 1))
 fi
 
+if grep -q 'repoRoot/specs/' agents/researcher.md; then
+  PASS=$((PASS + 1))
+else
+  echo "FAIL: researcher agent missing explicit repoRoot/specs walk"
+  FAIL=$((FAIL + 1))
+fi
+
+if grep -q 'Always emit a `## Related Specs` section in `research.md`' agents/researcher.md; then
+  PASS=$((PASS + 1))
+else
+  echo "FAIL: researcher agent missing mandatory Related Specs output section"
+  FAIL=$((FAIL + 1))
+fi
+
 if grep -q 'local tool, skill, plugin, hook, command, or CLI integration' agents/researcher.md; then
   PASS=$((PASS + 1))
 else
@@ -133,6 +147,20 @@ if grep -q 'Task size guidance:' agents/task-planner.md; then
   PASS=$((PASS + 1))
 else
   echo "FAIL: task-planner missing task-size guidance"
+  FAIL=$((FAIL + 1))
+fi
+
+if grep -q 'remoteTarget = yes' agents/task-planner.md; then
+  PASS=$((PASS + 1))
+else
+  echo "FAIL: task-planner missing explicit remoteTarget classification"
+  FAIL=$((FAIL + 1))
+fi
+
+if grep -q 'absence of positive evidence defaults to `remoteTarget = no`' agents/task-planner.md; then
+  PASS=$((PASS + 1))
+else
+  echo "FAIL: task-planner missing conservative default for PR lifecycle gating"
   FAIL=$((FAIL + 1))
 fi
 

@@ -76,6 +76,24 @@ Never emit a `Verify` command that is destructive, privilege-escalating, or outs
 - group independent work as parallelizable only when file ownership does not overlap
 - resolve `repoRoot`
 
+### Step 1.5: Classify remote-target expectation
+
+Before phase generation, classify whether this project clearly targets a remote repo / PR workflow.
+
+Use this rule:
+- `remoteTarget = yes` only when there is explicit positive evidence in `idea.md`, `design.md`, `research.md`, or light repo scan such as:
+  - GitHub / git remote / pull request / PR / branch / CI / review comments / merge workflow
+  - publishing or delivery to a repo-backed remote target
+- `remoteTarget = no` when the work is clearly local-only, such as:
+  - local scripts
+  - local skills
+  - dotfiles
+  - install targets under `~/`
+  - no explicit remote signals found
+
+For `v1.x`, absence of positive evidence defaults to `remoteTarget = no`.
+Do not add PR lifecycle tasks by template habit.
+
 ### Step 2: Decompose into phases
 
 Use this default order:
@@ -92,7 +110,7 @@ Add or extend tests for the implemented behavior.
 **Phase 4: Quality Gates**
 Run lint/typecheck/build/docs or equivalent repo-local checks.
 
-Add **Phase 5: PR Lifecycle** only if the project clearly targets a remote repo with branch/PR/CI workflow.
+Add **Phase 5: PR Lifecycle** only if `remoteTarget = yes`.
 
 ### Step 3: Write each task
 
@@ -192,7 +210,7 @@ shell: "bash"
 ...
 
 ## Phase 5: PR Lifecycle
-<!-- include only when applicable -->
+<!-- include only when `remoteTarget = yes` -->
 
 ## Coverage Matrix
 | AC / NFR | Task IDs |
