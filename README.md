@@ -44,8 +44,9 @@ Prerequisites on macOS: `bash`, `git`, `jq`. Install `jq` via Homebrew (`brew in
 
 ## Release Notes
 
-- Current release: `v1.2.0` (2026-04-17)
-- This release packages the successful P336 calibration pass: direct `tasks` command surface, tighter coordinator conflict scoring, and restored design/task compression.
+- Current release: `v1.2.1` (2026-04-18)
+- `v1.2.0` packaged the successful P336 calibration pass: direct `tasks` command surface, tighter coordinator conflict scoring, and restored design/task compression.
+- `v1.2.1` is a small post-QA polish release: related-spec discovery and conditional PR lifecycle gating.
 
 ## Validation Status
 
