@@ -118,14 +118,16 @@ else
   fail "context-loader.sh still uses bare readlink -f"
 fi
 
-# Verify portable_realpath resolves correctly on this system
+# Verify portable_realpath resolves correctly on this system. On macOS, /var is a
+# symlink to /private/var, so compare against the physical canonical path.
 REAL_TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$REAL_TMP_DIR"' EXIT
+EXPECTED_REAL_TMP_DIR="$(cd "$REAL_TMP_DIR" && pwd -P)"
 RESOLVED="$(bash -c ". hooks/scripts/resolve-config.sh && portable_realpath \"$REAL_TMP_DIR\"")"
-if [ "$RESOLVED" = "$REAL_TMP_DIR" ]; then
+if [ "$RESOLVED" = "$EXPECTED_REAL_TMP_DIR" ]; then
   ok "portable_realpath resolves a real directory path correctly"
 else
-  fail "portable_realpath returned unexpected result: '$RESOLVED' (expected '$REAL_TMP_DIR')"
+  fail "portable_realpath returned unexpected result: '$RESOLVED' (expected '$EXPECTED_REAL_TMP_DIR')"
 fi
 
 echo "-- Ambiguous project safety..."
