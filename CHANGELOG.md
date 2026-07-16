@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.3.0 — 2026-07-16
+
+Adaptive model router release for spec execution.
+
+### Highlights
+
+- added optional `model:` and `model_used:` task metadata while preserving existing task files
+- introduced abstract routing tiers (`light`, `standard`, `advanced`, `frontier`) with generic per-CLI profile files
+- wired `/spec-drive:implement` dispatch through the model resolver with safe inherit fallbacks
+- added routing-quality fixtures, legacy no-model compatibility coverage, schema-stability checks, and a public-repo cleanliness gate
+- kept private/local provider details out of the public plugin; local deployments can layer private profiles outside the repo
+
 ## v1.2.1 — 2026-04-18
 
 Post-QA polish release after the v1.2.0 calibration wave.
