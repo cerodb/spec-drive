@@ -2,6 +2,39 @@
 # test-smoke.sh — Smoke test: minimal project creation flow (no LLM, file/state validation only)
 set -euo pipefail
 
+
+echo "-- Legacy no-model task compatibility (PG115)..."
+pg115_tmp="$(mktemp -d)"
+cat > "$pg115_tmp/tasks.md" <<'EOF_PG115_LEGACY_TASK'
+- [ ] 1.1 Legacy task without model field
+  - **Do**: Keep backward compatibility for pre-router task blocks.
+  - **Files**: `README.md`
+  - **Traces**: FR-8
+  - **Cwd**: `<repoRoot>`
+  - **Done when**: resolver inherits the session model.
+  - **Verify**: `true`
+  - **Timeout**: `30s`
+  - **Commit**: `test: legacy no-model task`
+EOF_PG115_LEGACY_TASK
+if grep -q 'model:' "$pg115_tmp/tasks.md"; then
+  echo "  FAIL: legacy fixture unexpectedly contains model field"
+  rm -rf "$pg115_tmp"
+  exit 1
+fi
+pg115_err="$pg115_tmp/resolve-model.err"
+pg115_out="$(bash hooks/scripts/resolve-model.sh "" claude-code 2>"$pg115_err")"
+if printf '%s\n' "$pg115_out" | grep -qx 'mechanism=inherit' && [ ! -s "$pg115_err" ]; then
+  echo "  OK: legacy no-model task resolves to inherit without warnings"
+else
+  echo "  FAIL: legacy no-model task did not resolve cleanly to inherit"
+  printf 'stdout:\n%s\n' "$pg115_out"
+  printf 'stderr:\n'
+  cat "$pg115_err"
+  rm -rf "$pg115_tmp"
+  exit 1
+fi
+rm -rf "$pg115_tmp"
+
 PLUGIN_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$PLUGIN_ROOT"
 
@@ -151,12 +184,54 @@ else
 fi
 
 # ============================================================================
+# Backward-compat and coordinator smoke tests
+# ============================================================================
+
+RESOLVE_MODEL_SCRIPT="$PLUGIN_ROOT/hooks/scripts/resolve-model.sh"
+SCORE_SCRIPT="$PLUGIN_ROOT/hooks/scripts/coordinator-score.sh"
+
+echo "-- Backward-compat resolver behavior..."
+LEGACY_DIR="$TMPDIR_SMOKE/legacy-no-model"
+mkdir -p "$LEGACY_DIR"
+cat > "$LEGACY_DIR/tasks.md" <<'TASKS_LEGACY'
+# Tasks: legacy
+
+## Task 1: Keep legacy tasks valid
+
+- [ ] Preserve tasks.md blocks with no model field
+TASKS_LEGACY
+
+if [ ! -x "$RESOLVE_MODEL_SCRIPT" ]; then
+  fail "resolve-model.sh is missing or not executable at $RESOLVE_MODEL_SCRIPT"
+else
+  ok "resolve-model.sh exists and is executable"
+
+  RESOLVE_STDERR="$TMPDIR_SMOKE/resolve-model.stderr"
+  RESOLVE_OUT="$(cd "$LEGACY_DIR" && bash "$RESOLVE_MODEL_SCRIPT" "" 2>"$RESOLVE_STDERR")"
+  RESOLVE_EXIT=$?
+
+  if [ "$RESOLVE_EXIT" -eq 0 ]; then
+    ok "resolver exits 0 when model tier is absent"
+  else
+    fail "resolver should exit 0 when model tier is absent (got $RESOLVE_EXIT)"
+  fi
+
+  if printf '%s\n' "$RESOLVE_OUT" | grep -q '^mechanism=inherit$'; then
+    ok "resolver emits mechanism=inherit for absent model tier"
+  else
+    fail "resolver should emit mechanism=inherit for absent model tier"
+  fi
+
+  if [ ! -s "$RESOLVE_STDERR" ]; then
+    ok "resolver does not write stderr for absent model tier"
+  else
+    fail "resolver should not write stderr for absent model tier"
+  fi
+fi
+
 # Coordinator scoring function smoke tests
 # Exercise hooks/scripts/coordinator-score.sh against fixtures without an LLM.
 # Each fixture asserts a specific (outcome, mode, reason_prefix) triple.
-# ============================================================================
-
-SCORE_SCRIPT="$PLUGIN_ROOT/hooks/scripts/coordinator-score.sh"
 
 if [ ! -x "$SCORE_SCRIPT" ]; then
   fail "coordinator-score.sh is missing or not executable at $SCORE_SCRIPT"
