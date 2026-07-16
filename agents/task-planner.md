@@ -121,6 +121,7 @@ Every task MUST follow this format:
   - **Do**: Numbered steps describing exactly what to implement or verify
   - **Files**: List of files to create or modify
   - **Traces**: AC-1.1, FR-2, NFR-1
+  - **model**: <tier> (optional; one of `light|standard|advanced|frontier`)
   - **Cwd**: <repoRoot or explicit subpath>
   - **Done when**: Observable success condition
   - **Verify**: `shell command that proves it works` (exit 0 on success)
