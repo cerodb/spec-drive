@@ -227,6 +227,30 @@ else
   else
     fail "resolver should not write stderr for absent model tier"
   fi
+
+  PLACEHOLDER_STDERR="$TMPDIR_SMOKE/resolve-model-placeholder.stderr"
+  set +e
+  PLACEHOLDER_OUT="$(cd "$LEGACY_DIR" && bash "$RESOLVE_MODEL_SCRIPT" light codex 2>"$PLACEHOLDER_STDERR")"
+  PLACEHOLDER_EXIT=$?
+  set -e
+
+  if [ "$PLACEHOLDER_EXIT" -ne 0 ]; then
+    ok "resolver fails fast for unresolved subprocess placeholders"
+  else
+    fail "resolver should fail when shipped subprocess profile still contains placeholders"
+  fi
+
+  if grep -q '^error=unresolved_placeholder$' "$PLACEHOLDER_STDERR"; then
+    ok "resolver reports unresolved_placeholder for template stubs"
+  else
+    fail "resolver should report error=unresolved_placeholder for template stubs"
+  fi
+
+  if [ -z "$PLACEHOLDER_OUT" ]; then
+    ok "resolver does not emit stdout for unresolved placeholder errors"
+  else
+    fail "resolver should not emit stdout for unresolved placeholder errors"
+  fi
 fi
 
 # Coordinator scoring function smoke tests

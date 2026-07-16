@@ -131,8 +131,8 @@ Before delegating a Regular Task, resolve its `model:` tier to a concrete dispat
    `key=value` lines it always emits:
    - `mechanism=` -- one of `agent`, `subprocess`, `inherit`
    - `model=` -- concrete model id (set only when `mechanism=agent`)
-   - `cmd=` -- command template with `{prompt}`/`{MODEL}`/`{CMD}` placeholders (set only when
-     `mechanism=subprocess`)
+   - `cmd=` -- command template with `{prompt}` placeholder (set only when
+     `mechanism=subprocess`; shipped `{MODEL}`/`{CMD}` profile stubs must be overridden before use)
 3. Branch the dispatch on `mechanism`:
    - **`mechanism=agent`** -- invoke `spec-drive:executor` via the Agent tool WITH the resolved
      `model` added as a parameter: `Agent(subagent_type: "spec-drive:executor", model: <resolved
@@ -143,9 +143,10 @@ Before delegating a Regular Task, resolve its `model:` tier to a concrete dispat
      the trailing `TASK_COMPLETE` / `TASK_BLOCKED` line exactly as Step 7 parses agent results today.
    - **`mechanism=inherit`** -- current behavior: invoke `spec-drive:executor` via the Agent tool with
      no `model` parameter (the agent runs on whatever model the coordinator itself is running on).
-     This is the fallback for tasks with no `model:` field, unknown/unresolvable tiers, and any
-     resolver failure (missing script, missing `jq`, non-zero exit) -- never block dispatch on a
-     resolver error.
+     This is the fallback for tasks with no `model:` field and unknown/unresolvable tiers.
+     Missing resolver tooling may still fall back to inherit, but explicit resolver configuration errors
+     such as `error=unresolved_placeholder` must stop dispatch with the resolver stderr so the user can
+     fix `profiles.local.json` instead of running a literal placeholder command.
 
 #### Regular Task (no marker)
 

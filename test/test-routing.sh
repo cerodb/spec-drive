@@ -1,204 +1,73 @@
 #!/usr/bin/env bash
+# test-routing.sh — Ensure routing reference fixtures are documented as planner examples.
+#
+# The actual router is the LLM planner applying agents/task-planner.md Step 3.5.
+# This test intentionally does NOT implement a parallel Bash router. It verifies that
+# the public fixtures remain present and are mirrored as few-shot/reference examples
+# in the real planner prompt, avoiding a false deterministic quality gate.
 set -euo pipefail
 
 PLUGIN_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$PLUGIN_ROOT"
 
 FIXTURE_DIR="test/fixtures/routing"
+PLANNER="agents/task-planner.md"
 PASS=0
 FAIL=0
-EXACT=0
 
-tier_rank() {
-  case "$1" in
-    light) echo 0 ;;
-    standard) echo 1 ;;
-    advanced) echo 2 ;;
-    frontier) echo 3 ;;
-    *) echo -1 ;;
-  esac
+ok() {
+  PASS=$((PASS + 1))
+  echo "  OK: $1"
 }
 
-max_tier() {
-  local left_rank right_rank
-  left_rank="$(tier_rank "$1")"
-  right_rank="$(tier_rank "$2")"
-  if [ "$right_rank" -gt "$left_rank" ]; then
-    echo "$2"
-  else
-    echo "$1"
-  fi
+fail() {
+  FAIL=$((FAIL + 1))
+  echo "  FAIL: $1"
 }
 
-matches_any() {
-  local text="$1"
-  shift
-  local pattern
-  for pattern in "$@"; do
-    if printf '%s' "$text" | grep -Eq "$pattern"; then
-      return 0
-    fi
-  done
-  return 1
-}
+echo "=== Routing Reference Consistency Test ==="
 
-infer_surface() {
-  local files_line="$1"
-  local text="$2"
-  local file_count
-  file_count="$(printf '%s\n' "$files_line" | grep -o '`[^`]*`' | wc -l | tr -d ' ')"
+if grep -q '#### Routing reference examples' "$PLANNER"; then
+  ok "task-planner includes routing reference examples"
+else
+  fail "task-planner is missing routing reference examples"
+fi
 
-  if matches_any "$text" 'public contract|public api|published task contract|downstream tools|multiple downstream|cross-repo'; then
-    echo frontier
-  elif [ "$file_count" -ge 4 ] || matches_any "$text" 'shared helper|multiple modules|cross-cutting|shared/cross-cutting'; then
-    echo advanced
-  elif [ "$file_count" -ge 2 ]; then
-    echo standard
-  else
-    echo light
-  fi
-}
-
-infer_logical() {
-  local text="$1"
-  if matches_any "$text" 'reconcile conflicting|breaking change|transition plan|without breaking active sessions|rollback strategy'; then
-    echo frontier
-  elif matches_any "$text" 'edge cases|backward compatibility|rollback-safe|migration|shared helper|duplicated fallback|regression test'; then
-    echo advanced
-  elif matches_any "$text" 'add (a )?validation test|assert|tighten parsing|extend the command smoke test|new .* flag'; then
-    echo standard
-  else
-    echo light
-  fi
-}
-
-infer_reversibility() {
-  local text="$1"
-  if matches_any "$text" 'breaking change|published task contract|live provider|stale credentials|active sessions'; then
-    echo frontier
-  elif matches_any "$text" 'rollback-safe|migration|persisted state|legacy|upgrade path'; then
-    echo advanced
-  else
-    echo light
-  fi
-}
-
-infer_external() {
-  local text="$1"
-  if matches_any "$text" 'oauth provider|live external provider|authentication|token exchange|stale credentials'; then
-    echo frontier
-  elif matches_any "$text" 'provider contract|third-party|external service|webhook'; then
-    echo advanced
-  else
-    echo light
-  fi
-}
-
-infer_ambiguity() {
-  local text="$1"
-  if matches_any "$text" 'reconcile conflicting|breaking change|transition plan'; then
-    echo frontier
-  elif matches_any "$text" 'rollback strategy|backward compatibility|legacy|choose'; then
-    echo advanced
-  elif matches_any "$text" 'small config field'; then
-    echo standard
-  else
-    echo light
-  fi
-}
-
-infer_criticality() {
-  local text="$1"
-  if matches_any "$text" 'live external provider|authentication|breaking change|active sessions|stale credentials'; then
-    echo frontier
-  elif matches_any "$text" 'rollback-safe|migration|backward compatibility|legacy'; then
-    echo advanced
-  else
-    echo light
-  fi
-}
-
-assign_tier() {
-  local fixture="$1"
-  local text files_line assigned signal
-
-  text="$(tr '[:upper:]' '[:lower:]' < "$fixture")"
-  files_line="$(grep -m1 '^[[:space:]]*- \*\*Files\*\*:' "$fixture" || true)"
-  assigned="light"
-
-  for signal in \
-    "$(infer_logical "$text")" \
-    "$(infer_surface "$files_line" "$text")" \
-    "$(infer_reversibility "$text")" \
-    "$(infer_external "$text")" \
-    "$(infer_ambiguity "$text")" \
-    "$(infer_criticality "$text")"
-  do
-    assigned="$(max_tier "$assigned" "$signal")"
-  done
-
-  echo "$assigned"
-}
-
-echo "=== Routing Fixture Test ==="
-
+count=0
 for fixture in "$FIXTURE_DIR"/*.md; do
+  count=$((count + 1))
+  base="$(basename "$fixture" .md)"
   expected="$(sed -n 's/^expected_tier:[[:space:]]*//p' "$fixture" | head -n 1)"
+  example_id="$base"
+
   if [ -z "$expected" ]; then
-    echo "  FAIL: $(basename "$fixture") missing expected_tier"
-    FAIL=$((FAIL + 1))
+    fail "$base missing expected_tier"
     continue
   fi
 
-  assigned="$(assign_tier "$fixture")"
-  expected_rank="$(tier_rank "$expected")"
-  assigned_rank="$(tier_rank "$assigned")"
-  diff=$((expected_rank - assigned_rank))
-  if [ "$diff" -lt 0 ]; then
-    diff=$(( -diff ))
-  fi
+  case "$expected" in
+    light|standard|advanced|frontier) ok "$base has valid expected_tier=$expected" ;;
+    *) fail "$base has invalid expected_tier=$expected" ;;
+  esac
 
-  if [ "$assigned" = "$expected" ]; then
-    EXACT=$((EXACT + 1))
-    PASS=$((PASS + 1))
-    echo "  OK: $(basename "$fixture") expected=$expected assigned=$assigned"
-  elif [ "$diff" -le 1 ]; then
-    FAIL=$((FAIL + 1))
-    echo "  WARN: $(basename "$fixture") expected=$expected assigned=$assigned diff=$diff"
+  if grep -E "\| \`$example_id\` .* \| \`$expected\` \|" "$PLANNER" >/dev/null; then
+    ok "$base is represented in task-planner examples with expected tier"
   else
-    FAIL=$((FAIL + 1))
-    echo "  FAIL: $(basename "$fixture") expected=$expected assigned=$assigned diff=$diff"
+    fail "$base expected tier is not represented in the same task-planner example row"
   fi
 done
 
-TOTAL=$((PASS + FAIL))
+if [ "$count" -ge 8 ]; then
+  ok "at least 8 routing fixtures are present"
+else
+  fail "expected at least 8 routing fixtures, found $count"
+fi
 
 echo ""
-echo "Fixtures: $TOTAL | Exact: $EXACT | Non-exact: $((TOTAL - EXACT))"
+echo "Fixtures: $count | Passed: $PASS | Failed: $FAIL"
 
-if [ "$TOTAL" -lt 8 ]; then
-  echo "FAIL: expected at least 8 fixtures"
+if [ "$FAIL" -gt 0 ]; then
   exit 1
 fi
-
-if [ "$EXACT" -lt 6 ]; then
-  echo "FAIL: exact match threshold not met (need >= 6)"
-  exit 1
-fi
-
-for fixture in "$FIXTURE_DIR"/*.md; do
-  expected="$(sed -n 's/^expected_tier:[[:space:]]*//p' "$fixture" | head -n 1)"
-  assigned="$(assign_tier "$fixture")"
-  expected_rank="$(tier_rank "$expected")"
-  assigned_rank="$(tier_rank "$assigned")"
-  diff=$((expected_rank - assigned_rank))
-  if [ "$diff" -lt 0 ]; then
-    diff=$(( -diff ))
-  fi
-  if [ "$diff" -gt 1 ]; then
-    echo "FAIL: fixture $(basename "$fixture") is off by more than one tier"
-    exit 1
-  fi
-done
 
 echo "PASS"

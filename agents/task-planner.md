@@ -206,6 +206,26 @@ runs this document.
 The user may still hand-edit any `model:` value in `tasks.md` after it is written; that override
 is honored as-is by the executor and is out of scope for this step.
 
+#### Routing reference examples
+
+These examples are calibration examples for the LLM planner. They are not a deterministic unit test
+of model quality; they show how the six-signal heuristic should be applied when writing `model:`.
+
+| Example id | Short task shape | Highest signal floor | Expected tier |
+|---|---|---|---|
+| `01-doc-heading` | Rename one README heading with no behavior change | one isolated mechanical doc edit | `light` |
+| `02-inline-comment` | Add one clarifying comment to a test script | one isolated non-behavioral edit | `light` |
+| `03-command-test` | Add a small command smoke test for a status flag | straightforward test + command docs | `standard` |
+| `04-parse-validation` | Reject an empty config field and cover it | small validation branch across loader/test | `standard` |
+| `05-shared-refactor` | Share task parsing fallback logic across call sites | cross-cutting helper + legacy edge cases | `advanced` |
+| `06-migration-guard` | Add rollback-safe state migration coverage | persisted state + rollback path | `advanced` |
+| `07-auth-rotation` | Rotate live external auth without breaking sessions | live auth + active-session risk | `frontier` |
+| `08-breaking-contract` | Redesign a published task contract for downstream clients | public breaking contract + transition plan | `frontier` |
+
+Use these examples as few-shot calibration when judging new tasks. If a new task resembles one of
+these shapes, start from the matching expected tier and then adjust only if one of the six signals is
+clearly higher or lower in the actual task.
+
 ### Step 4: Verification strategy
 
 Verification guidance by phase:

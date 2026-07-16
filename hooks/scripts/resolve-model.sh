@@ -17,7 +17,7 @@
 # Output (key=value stdout, one per line):
 #   mechanism=<agent|subprocess|inherit>
 #   model=<id or empty>
-#   cmd=<template or empty>
+#   cmd=<template or empty; subprocess templates must only leave {prompt} unresolved>
 
 set -euo pipefail
 
@@ -144,6 +144,18 @@ if [ "$mechanism" = "subprocess" ]; then
         *)
             printf 'error=malformed_template\n' >&2
             printf 'reason=subprocess cmd template missing required {prompt} placeholder: %s\n' "$cmd" >&2
+            exit 1
+            ;;
+    esac
+
+    # Shipped non-Claude subprocess profiles are public stubs. They may contain
+    # {MODEL}/{CMD} as documentation placeholders, but they are not executable
+    # until a user replaces the whole cmd in profiles.local.json. Fail fast with
+    # a clear config error instead of dispatching a literal placeholder to a CLI.
+    case "$cmd" in
+        *'{MODEL}'*|*'{CMD}'*)
+            printf 'error=unresolved_placeholder\n' >&2
+            printf 'reason=subprocess cmd template still contains {MODEL} or {CMD}; override this profile in profiles.local.json with a concrete command: %s\n' "$cmd" >&2
             exit 1
             ;;
     esac
