@@ -142,7 +142,7 @@ EOF
 cat >"$TMP_HOME/spec-drive-projects/P101/spec/.spec-drive-state.json" <<'EOF'
 {"phase":"execution","awaitingApproval":false,"mode":"normal","taskIndex":0,"totalTasks":1}
 EOF
-AMBIGUOUS_OUTPUT="$(HOME="$TMP_HOME" bash hooks/scripts/stop-watcher.sh <<'EOF'
+AMBIGUOUS_OUTPUT="$(HOME="$TMP_HOME" XDG_CONFIG_HOME="$TMP_HOME/.config" bash hooks/scripts/stop-watcher.sh <<'EOF'
 {"cwd":"/tmp"}
 EOF
 )"
@@ -157,7 +157,7 @@ rm -rf "$TMP_HOME/spec-drive-projects/P101"
 cat >"$TMP_HOME/spec-drive-projects/P100/spec/.spec-drive-state.json" <<'EOF'
 {"name":"P100","phase":"execution","awaitingApproval":false,"mode":"normal","taskIndex":0,"totalTasks":1,"taskIteration":1,"maxTaskIterations":5,"globalIteration":"abc","maxGlobalIterations":"xyz"}
 EOF
-NUMERIC_OUTPUT="$(HOME="$TMP_HOME" bash hooks/scripts/stop-watcher.sh <<'EOF'
+NUMERIC_OUTPUT="$(HOME="$TMP_HOME" XDG_CONFIG_HOME="$TMP_HOME/.config" bash hooks/scripts/stop-watcher.sh <<'EOF'
 {"cwd":"/tmp"}
 EOF
 )"
@@ -180,7 +180,7 @@ EOF
 cat >"$WORKSPACE/workspace-projects/P200/spec/.spec-drive-state.json" <<'EOF'
 {"name":"P200","phase":"execution","awaitingApproval":false,"mode":"normal","taskIndex":0,"totalTasks":1}
 EOF
-WORKSPACE_OUTPUT="$(HOME="$TMP_HOME" bash hooks/scripts/stop-watcher.sh <<EOF
+WORKSPACE_OUTPUT="$(HOME="$TMP_HOME" XDG_CONFIG_HOME="$TMP_HOME/.config" bash hooks/scripts/stop-watcher.sh <<EOF
 {"cwd":"$WORKSPACE/repo"}
 EOF
 )"
@@ -199,7 +199,7 @@ EOF
 cat >"$TMP_HOME/xdg-projects/P201/spec/.spec-drive-state.json" <<'EOF'
 {"name":"P201","phase":"execution","awaitingApproval":false,"mode":"normal","taskIndex":0,"totalTasks":1}
 EOF
-XDG_OUTPUT="$(HOME="$TMP_HOME" bash hooks/scripts/stop-watcher.sh <<EOF
+XDG_OUTPUT="$(HOME="$TMP_HOME" XDG_CONFIG_HOME="$TMP_HOME/.config" bash hooks/scripts/stop-watcher.sh <<EOF
 {"cwd":"$WORKSPACE/repo"}
 EOF
 )"
