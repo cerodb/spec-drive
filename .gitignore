@@ -3,6 +3,10 @@ node_modules/
 *.log
 progress-*.txt
 
+# Local per-CLI model profile overrides (never public — may contain internal ids/paths)
+profiles.local.json
+*.local.json
+
 # Development artifacts (debate transcripts)
 agents/adversarial/
 debate-transcripts/

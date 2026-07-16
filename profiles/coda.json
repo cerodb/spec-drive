@@ -1,0 +1,6 @@
+{
+  "light": { "mechanism": "subprocess", "cmd": "coda-batch --model {MODEL} {prompt}" },
+  "standard": { "mechanism": "subprocess", "cmd": "coda-batch --model {MODEL} {prompt}" },
+  "advanced": { "mechanism": "subprocess", "cmd": "coda-batch --model {MODEL} {prompt}" },
+  "frontier": { "mechanism": "subprocess", "cmd": "coda-batch --model {MODEL} {prompt}" }
+}
