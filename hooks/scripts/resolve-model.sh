@@ -36,6 +36,18 @@ emit_inherit() {
     printf 'cmd=\n'
 }
 
+# emit_inherit_unresolved — tier was known but no profile (local/CLI/default) had
+# an entry for it. Falls back to inherit per FR-18 / design "Error Handling",
+# and records a note so callers can tell this apart from the plain
+# unknown-tier backward-compat path (which never hard-fails a run).
+emit_inherit_unresolved() {
+    local t="$1"
+    printf 'mechanism=inherit\n'
+    printf 'model=\n'
+    printf 'cmd=\n'
+    printf 'note=model_used: inherit (unresolved:%s)\n' "$t"
+}
+
 case "$tier" in
     light|standard|advanced|frontier) ;;
     *)
@@ -105,7 +117,11 @@ for candidate in "$local_profile" "$cli_profile" "$default_profile"; do
 done
 
 if [ -z "$entry" ]; then
-    emit_inherit
+    # Tier is a known tier name, but neither the local override, the CLI
+    # profile, nor default.json has an entry for it. Never hard-fail a run
+    # over routing (design "Error Handling") — fall back to inherit and note
+    # why, distinct from the plain unknown-tier backward-compat path above.
+    emit_inherit_unresolved "$tier"
     exit 0
 fi
 
@@ -116,6 +132,21 @@ cmd="$(printf '%s' "$entry" | jq -r '.cmd // empty')"
 if [ -z "$mechanism" ]; then
     emit_inherit
     exit 0
+fi
+
+# Subprocess mechanism requires a `{prompt}` placeholder in the cmd template
+# so the dispatcher can substitute the actual task prompt. A template missing
+# it is a config error, not a routing miss — fail fast per design "Error
+# Handling" (env_error), rather than silently dispatching a broken command.
+if [ "$mechanism" = "subprocess" ]; then
+    case "$cmd" in
+        *'{prompt}'*) ;;
+        *)
+            printf 'error=malformed_template\n' >&2
+            printf 'reason=subprocess cmd template missing required {prompt} placeholder: %s\n' "$cmd" >&2
+            exit 1
+            ;;
+    esac
 fi
 
 printf 'mechanism=%s\n' "$mechanism"
