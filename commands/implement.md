@@ -117,29 +117,99 @@ If `taskIndex >= totalTasks`, go to Step 9 (all tasks complete).
 
 ### Step 6: Detect Task Type and Dispatch
 
-Inspect the task description to determine the type:
+Inspect the task description to determine the type.
+
+#### Resolve Model Tier (pre-dispatch, Regular Tasks only)
+
+Before delegating a Regular Task, resolve its `model:` tier to a concrete dispatch mechanism:
+
+1. Parse the `model:` field from the task block (e.g. `model: standard`, placed after `Traces:` and
+   before `Cwd:`). If the field is absent, treat the tier as empty -- the resolver's inherit fallback
+   handles this case.
+2. Run `hooks/scripts/resolve-model.sh <tier>` via the Bash tool (path relative to the plugin/repo
+   root; `<tier>` may be empty for tasks with no `model:` field). Capture stdout and parse the three
+   `key=value` lines it always emits:
+   - `mechanism=` -- one of `agent`, `subprocess`, `inherit`
+   - `model=` -- concrete model id (set only when `mechanism=agent`)
+   - `cmd=` -- command template with `{prompt}`/`{MODEL}`/`{CMD}` placeholders (set only when
+     `mechanism=subprocess`)
+3. Branch the dispatch on `mechanism`:
+   - **`mechanism=agent`** -- invoke `spec-drive:executor` via the Agent tool WITH the resolved
+     `model` added as a parameter: `Agent(subagent_type: "spec-drive:executor", model: <resolved
+     model>, prompt: <executor contract>)`. Same call as the inherit case below, one field added.
+   - **`mechanism=subprocess`** -- run the profile's `cmd` template via the Bash tool, substituting
+     `{prompt}` with the executor contract (the exact "Execute this task: basePath / Task Block /
+     Progress" text used in the Agent-tool prompt below). Capture the subprocess's stdout and parse
+     the trailing `TASK_COMPLETE` / `TASK_BLOCKED` line exactly as Step 7 parses agent results today.
+   - **`mechanism=inherit`** -- current behavior: invoke `spec-drive:executor` via the Agent tool with
+     no `model` parameter (the agent runs on whatever model the coordinator itself is running on).
+     This is the fallback for tasks with no `model:` field, unknown/unresolvable tiers, and any
+     resolver failure (missing script, missing `jq`, non-zero exit) -- never block dispatch on a
+     resolver error.
 
 #### Regular Task (no marker)
 
-Delegate to the `spec-drive:executor` agent via Task tool:
+Delegate to the `spec-drive:executor` agent via Task tool, dispatched per the resolved mechanism from
+the resolution step above:
 
-```
-Task tool: spec-drive:executor
+- **`mechanism=agent`**:
+  ```
+  Agent tool: spec-drive:executor
+  model: <resolved model>
 
-Execute this task:
+  Execute this task:
 
-basePath: {basePath}
+  basePath: {basePath}
 
-Task Block:
-{full task block text}
+  Task Block:
+  {full task block text}
 
-Progress:
-{contents of basePath/.progress.md}
-```
+  Progress:
+  {contents of basePath/.progress.md}
+  ```
+
+- **`mechanism=subprocess`**:
+  ```
+  Bash: <profile cmd template, {prompt} substituted>
+
+  where {prompt} =
+  """
+  <spec-drive:executor contract (agents/executor.md instructions)>
+
+  Execute this task:
+
+  basePath: {basePath}
+
+  Task Block:
+  {full task block text}
+
+  Progress:
+  {contents of basePath/.progress.md}
+  """
+  ```
+  Parse the subprocess's stdout for a trailing `TASK_COMPLETE` or `TASK_BLOCKED` line, same as Step 7.
+
+- **`mechanism=inherit`** (no `model:` field, unknown tier, or resolver failure -- current/default
+  behavior):
+  ```
+  Task tool: spec-drive:executor
+
+  Execute this task:
+
+  basePath: {basePath}
+
+  Task Block:
+  {full task block text}
+
+  Progress:
+  {contents of basePath/.progress.md}
+  ```
 
 #### [VERIFY] Task
 
-Delegate to the `spec-drive:qa-engineer` agent via Task tool:
+`[VERIFY]` tasks are NOT routed through `resolve-model.sh` (MVP scope) -- they always run on the
+session model, regardless of any `model:` field on the task block. Delegate to the
+`spec-drive:qa-engineer` agent via Task tool:
 
 ```
 Task tool: spec-drive:qa-engineer
