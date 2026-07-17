@@ -59,27 +59,27 @@ Example local override:
 
 ```json
 {
-  "light": { "mechanism": "subprocess", "cmd": "codex exec -m gpt-5.4-mini -s workspace-write -- {prompt}" },
-  "standard": { "mechanism": "subprocess", "cmd": "codex exec -m gpt-5.4 -s workspace-write -- {prompt}" },
-  "advanced": { "mechanism": "subprocess", "cmd": "codex exec -m gpt-5.5 -s workspace-write -- {prompt}" },
-  "frontier": { "mechanism": "subprocess", "cmd": "codex exec -m gpt-5.6-sol -s workspace-write -- {prompt}" }
+  "light": { "mechanism": "subprocess", "cmd": "codex exec -m gpt-5.4-mini -s workspace-write -- < {promptfile}" },
+  "standard": { "mechanism": "subprocess", "cmd": "codex exec -m gpt-5.4 -s workspace-write -- < {promptfile}" },
+  "advanced": { "mechanism": "subprocess", "cmd": "codex exec -m gpt-5.5 -s workspace-write -- < {promptfile}" },
+  "frontier": { "mechanism": "subprocess", "cmd": "codex exec -m gpt-5.6-sol -s workspace-write -- < {promptfile}" }
 }
 ```
 
 Real subprocess probes for v1.3.1 confirmed:
 
-- `codex exec -m <model> -s workspace-write -- ...` runs successfully for all four mapped Codex tiers above.
+- `codex exec -m <model> -s workspace-write -- < {promptfile}` runs successfully for all four mapped Codex tiers above.
 - A Codex subprocess can receive the CLI-neutral implementer contract, implement a canary task, verify it,
   and end stdout with `TASK_COMPLETE`; the coordinator then re-runs Verify and commits with the exact task message.
-- `claude -p --model claude-opus-4-8 --effort high -- "..."` runs without error and accepts the
+- `claude -p --model claude-opus-4-8 --effort high -- < {promptfile}` runs without error and accepts the
   effort flag in practice, not only in `--help` output.
 - A Claude frontier subprocess can run the same canary flow and end stdout with `TASK_COMPLETE`; the
   coordinator owns the commit step.
 
 Notes from the live run:
 
-- `-- {prompt}` is required because executor prompts are Markdown and can begin with `---` frontmatter,
-  which CLIs may otherwise parse as options.
+- Subprocess prompts are written to a temporary file and profiles receive `{promptfile}` only; prompt
+  content is never interpolated into the host shell command line.
 - Codex runs under `workspace-write`; because executors no longer touch `.git`, no full-access sandbox
   is required for the public profile.
 

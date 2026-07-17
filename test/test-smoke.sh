@@ -234,7 +234,7 @@ else
   CODEX_EXIT=$?
   set -e
 
-  if [ "$CODEX_EXIT" -eq 0 ] && printf '%s\n' "$CODEX_OUT" | grep -q '^cmd=codex exec -m gpt-5.4-mini -s workspace-write -- {prompt}$'; then
+  if [ "$CODEX_EXIT" -eq 0 ] && printf '%s\n' "$CODEX_OUT" | grep -q '^cmd=codex exec -m gpt-5.4-mini -s workspace-write -- < {promptfile}$'; then
     ok "resolver maps codex light tier to a concrete subprocess command"
   else
     fail "resolver should map codex light tier to a concrete subprocess command"
@@ -268,6 +268,38 @@ else
     ok "resolver does not emit stdout for unresolved placeholder errors"
   else
     fail "resolver should not emit stdout for unresolved placeholder errors"
+  fi
+
+  INLINE_CONFIG="$TMPDIR_SMOKE/inline-prompt-config"
+  mkdir -p "$INLINE_CONFIG/spec-drive"
+  cat > "$INLINE_CONFIG/spec-drive/profiles.local.json" <<'INLINE_PROFILE'
+{
+  "light": { "mechanism": "subprocess", "cmd": "printf %s {prompt}" }
+}
+INLINE_PROFILE
+
+  INLINE_STDERR="$TMPDIR_SMOKE/resolve-model-inline-prompt.stderr"
+  set +e
+  INLINE_OUT="$(XDG_CONFIG_HOME="$INLINE_CONFIG" bash "$RESOLVE_MODEL_SCRIPT" light custom 2>"$INLINE_STDERR")"
+  INLINE_EXIT=$?
+  set -e
+
+  if [ "$INLINE_EXIT" -ne 0 ]; then
+    ok "resolver rejects inline subprocess prompt templates"
+  else
+    fail "resolver should reject inline subprocess prompt templates"
+  fi
+
+  if grep -q '^error=invalid_profile$' "$INLINE_STDERR" && grep -q 'use {promptfile}' "$INLINE_STDERR"; then
+    ok "resolver tells users to use promptfile for subprocess prompts"
+  else
+    fail "resolver should tell users to use promptfile for subprocess prompts"
+  fi
+
+  if [ -z "$INLINE_OUT" ]; then
+    ok "resolver does not emit stdout for inline prompt errors"
+  else
+    fail "resolver should not emit stdout for inline prompt errors"
   fi
 fi
 

@@ -17,7 +17,7 @@
 # Output (key=value stdout, one per line):
 #   mechanism=<agent|subprocess|inherit>
 #   model=<id or empty>
-#   cmd=<template or empty; subprocess templates must only leave {prompt} unresolved>
+#   cmd=<template or empty; subprocess templates must only leave {promptfile} unresolved>
 
 set -euo pipefail
 

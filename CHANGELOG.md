@@ -1,5 +1,22 @@
 # Changelog
 
+## v1.3.3 — 2026-07-17
+
+Subprocess prompt-file hardening release.
+
+### Highlights
+
+- replaced inline subprocess prompt interpolation with `{promptfile}` command templates
+- updated coordinator dispatch docs to write the full subprocess prompt to a chmod 600 temp file and pass only the path to the host shell
+- updated Codex, Claude frontier, and Coda subprocess profile templates to consume prompt files/stdin instead of inline prompt text
+- extended resolver validation so subprocess profiles require `{promptfile}` and reject inline `{prompt}`
+- added live security regression coverage for shell metacharacters in task text: prompt content mentioning `$(touch /tmp/pwned)` must not execute on the host
+
+### Scope notes
+
+- Executors remain pure implementers; the coordinator still owns git commits and tracking updates.
+- Public subprocess profiles stay sandboxed (`workspace-write` for Codex) and never require full-access defaults.
+
 ## v1.3.2 — 2026-07-17
 
 Router activation fix — the model router now actually engages in real runs.
