@@ -142,9 +142,13 @@ Before delegating a Regular Task, resolve its `model:` tier to a concrete dispat
 1. Parse the `model:` field from the task block (e.g. `model: standard`, placed after `Traces:` and
    before `Cwd:`). If the field is absent, treat the tier as empty -- the resolver's inherit fallback
    handles this case.
-2. Run `hooks/scripts/resolve-model.sh <tier>` via the Bash tool (path relative to the plugin/repo
-   root; `<tier>` may be empty for tasks with no `model:` field). Capture stdout and parse the three
-   `key=value` lines it always emits:
+2. Run the resolver via the Bash tool as `"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/resolve-model.sh" <tier>`.
+   `CLAUDE_PLUGIN_ROOT` points at this plugin's root. Do NOT use a bare relative path such as
+   `hooks/scripts/resolve-model.sh`: the coordinator's working directory is the user's project, not the
+   plugin, so a relative path is not found and every task would silently fall back to `inherit`. If
+   `CLAUDE_PLUGIN_ROOT` is not set in your runtime, resolve the plugin root from the path of this
+   command file (same fallback contract as `agents/coordinator.md`). `<tier>` may be empty for tasks
+   with no `model:` field. Capture stdout and parse the three `key=value` lines it always emits:
    - `mechanism=` -- one of `agent`, `subprocess`, `inherit`
    - `model=` -- concrete model id (set only when `mechanism=agent`)
    - `cmd=` -- command template with `{prompt}` placeholder (set only when
