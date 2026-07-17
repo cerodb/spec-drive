@@ -45,7 +45,7 @@ if dangerous_matches="$(grep -RIn --include='*.json' --include='*.md' --include=
 fi
 
 if [ -z "$dangerous_matches" ]; then
-  ok "no public profile or docs mention danger-full-access"
+  ok "no full-access sandbox flag in public profiles or docs"
 else
   fail "dangerous full-access sandbox must not ship in public profiles or docs"
   printf '%s
