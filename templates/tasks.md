@@ -8,7 +8,7 @@ created: "{{timestamp}}"
 
 ## Phase 1: Make It Work (POC)
 
-<!-- Minimal working implementation. Hardcoded values are fine. Skip tests. Goal: prove the approach works end-to-end. Each task needs: Do (steps), Files (touched), Done when (criteria), Verify (command), Commit (message). -->
+<!-- Minimal working implementation. Hardcoded values are fine. Skip tests. Goal: prove the approach works end-to-end. Each task needs: Do (steps), Files (touched), Traces (AC/FR/NFR ids), an optional model: <tier> field placed after Traces and before Cwd (tier is one of light|standard|advanced|frontier — omit to inherit the default model), Cwd (working directory), Done when (criteria), Verify (command), Commit (message). After the task completes, the executor may record which tier actually ran as model_used: <tier>. -->
 
 - [ ] 1.1 ...
 

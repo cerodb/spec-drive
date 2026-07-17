@@ -118,14 +118,16 @@ else
   fail "context-loader.sh still uses bare readlink -f"
 fi
 
-# Verify portable_realpath resolves correctly on this system
+# Verify portable_realpath resolves correctly on this system. On macOS, /var is a
+# symlink to /private/var, so compare against the physical canonical path.
 REAL_TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$REAL_TMP_DIR"' EXIT
+EXPECTED_REAL_TMP_DIR="$(cd "$REAL_TMP_DIR" && pwd -P)"
 RESOLVED="$(bash -c ". hooks/scripts/resolve-config.sh && portable_realpath \"$REAL_TMP_DIR\"")"
-if [ "$RESOLVED" = "$REAL_TMP_DIR" ]; then
+if [ "$RESOLVED" = "$EXPECTED_REAL_TMP_DIR" ]; then
   ok "portable_realpath resolves a real directory path correctly"
 else
-  fail "portable_realpath returned unexpected result: '$RESOLVED' (expected '$REAL_TMP_DIR')"
+  fail "portable_realpath returned unexpected result: '$RESOLVED' (expected '$EXPECTED_REAL_TMP_DIR')"
 fi
 
 echo "-- Ambiguous project safety..."
@@ -142,7 +144,7 @@ EOF
 cat >"$TMP_HOME/spec-drive-projects/P101/spec/.spec-drive-state.json" <<'EOF'
 {"phase":"execution","awaitingApproval":false,"mode":"normal","taskIndex":0,"totalTasks":1}
 EOF
-AMBIGUOUS_OUTPUT="$(HOME="$TMP_HOME" bash hooks/scripts/stop-watcher.sh <<'EOF'
+AMBIGUOUS_OUTPUT="$(HOME="$TMP_HOME" XDG_CONFIG_HOME="$TMP_HOME/.config" bash hooks/scripts/stop-watcher.sh <<'EOF'
 {"cwd":"/tmp"}
 EOF
 )"
@@ -157,7 +159,7 @@ rm -rf "$TMP_HOME/spec-drive-projects/P101"
 cat >"$TMP_HOME/spec-drive-projects/P100/spec/.spec-drive-state.json" <<'EOF'
 {"name":"P100","phase":"execution","awaitingApproval":false,"mode":"normal","taskIndex":0,"totalTasks":1,"taskIteration":1,"maxTaskIterations":5,"globalIteration":"abc","maxGlobalIterations":"xyz"}
 EOF
-NUMERIC_OUTPUT="$(HOME="$TMP_HOME" bash hooks/scripts/stop-watcher.sh <<'EOF'
+NUMERIC_OUTPUT="$(HOME="$TMP_HOME" XDG_CONFIG_HOME="$TMP_HOME/.config" bash hooks/scripts/stop-watcher.sh <<'EOF'
 {"cwd":"/tmp"}
 EOF
 )"
@@ -180,7 +182,7 @@ EOF
 cat >"$WORKSPACE/workspace-projects/P200/spec/.spec-drive-state.json" <<'EOF'
 {"name":"P200","phase":"execution","awaitingApproval":false,"mode":"normal","taskIndex":0,"totalTasks":1}
 EOF
-WORKSPACE_OUTPUT="$(HOME="$TMP_HOME" bash hooks/scripts/stop-watcher.sh <<EOF
+WORKSPACE_OUTPUT="$(HOME="$TMP_HOME" XDG_CONFIG_HOME="$TMP_HOME/.config" bash hooks/scripts/stop-watcher.sh <<EOF
 {"cwd":"$WORKSPACE/repo"}
 EOF
 )"
@@ -199,7 +201,7 @@ EOF
 cat >"$TMP_HOME/xdg-projects/P201/spec/.spec-drive-state.json" <<'EOF'
 {"name":"P201","phase":"execution","awaitingApproval":false,"mode":"normal","taskIndex":0,"totalTasks":1}
 EOF
-XDG_OUTPUT="$(HOME="$TMP_HOME" bash hooks/scripts/stop-watcher.sh <<EOF
+XDG_OUTPUT="$(HOME="$TMP_HOME" XDG_CONFIG_HOME="$TMP_HOME/.config" bash hooks/scripts/stop-watcher.sh <<EOF
 {"cwd":"$WORKSPACE/repo"}
 EOF
 )"

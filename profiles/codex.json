@@ -1,0 +1,6 @@
+{
+  "light": { "mechanism": "subprocess", "cmd": "codex exec -m {MODEL} {prompt}" },
+  "standard": { "mechanism": "subprocess", "cmd": "codex exec -m {MODEL} {prompt}" },
+  "advanced": { "mechanism": "subprocess", "cmd": "codex exec -m {MODEL} {prompt}" },
+  "frontier": { "mechanism": "subprocess", "cmd": "codex exec -m {MODEL} {prompt}" }
+}

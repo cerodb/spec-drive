@@ -138,6 +138,7 @@ If the commit fails, do not mark the task complete. Record the failure and outpu
 
 Only after commit success:
 - mark the task as `[x]` in `basePath/tasks.md`
+- append `model_used: <tier>` to the completed task's block in `tasks.md`, where `<tier>` is the tier that actually executed this task (light|standard|advanced|frontier). This is a plain task-block field alongside `Do`/`Files`/`Verify` — it does not touch `.spec-drive-state.json` or any other schema.
 - update the progress file (`progressFile` if provided, else `basePath/.progress.md`)
 - add task to Completed Tasks
 - set Current Task to "Awaiting next task"

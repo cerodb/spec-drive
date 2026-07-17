@@ -31,6 +31,38 @@ This repo is not equally automatic everywhere.
 
 Honest version: this repo is fully usable today, but only Claude-style runtimes have native plugin metadata in-tree.
 
+
+## Adaptive Model Router (v1.3.0)
+
+Spec-Drive v1.3.0 adds optional `model:` task metadata using abstract tiers: `light`,
+`standard`, `advanced`, and `frontier`. The planner assigns tiers with a six-signal heuristic;
+the executor records `model_used:` for completed tasks.
+
+Scope honesty:
+
+- Out of the box, Claude Code agent routing is the supported automatic path.
+- Cross-CLI subprocess profiles for Codex, Coda, and the generic default profile are public stubs.
+  They document the profile shape, but commands containing `{MODEL}` or `{CMD}` are intentionally
+  rejected by `hooks/scripts/resolve-model.sh` until the user supplies a full local override.
+- To enable a subprocess runtime, create `~/.config/spec-drive/profiles.local.json` with concrete
+  commands and concrete model names. Do not leave `{MODEL}` or `{CMD}` in the final command.
+- Routing quality is LLM-driven: `agents/task-planner.md` contains reference examples used as
+  few-shot calibration. The shell suite checks fixture/example consistency; it does not claim to
+  deterministically unit-test the LLM's judgment.
+
+Example local override:
+
+```json
+{
+  "light": { "mechanism": "subprocess", "cmd": "codex exec -m gpt-5.4 {prompt}" },
+  "standard": { "mechanism": "subprocess", "cmd": "codex exec -m gpt-5.4 {prompt}" },
+  "advanced": { "mechanism": "subprocess", "cmd": "codex exec -m gpt-5.4 {prompt}" },
+  "frontier": { "mechanism": "subprocess", "cmd": "codex exec -m gpt-5.4 {prompt}" }
+}
+```
+
+`claude -p --help` confirms the shipped Claude Code frontier command can use `--effort high`.
+
 ## macOS Compatibility
 
 Spec-Drive v1.1 is tested on both Linux and macOS via GitHub Actions CI.
@@ -44,7 +76,7 @@ Prerequisites on macOS: `bash`, `git`, `jq`. Install `jq` via Homebrew (`brew in
 
 ## Release Notes
 
-- Current release: `v1.2.1` (2026-04-18)
+- Current release: `v1.3.0` (2026-07-16)
 - `v1.2.0` packaged the successful P336 calibration pass: direct `tasks` command surface, tighter coordinator conflict scoring, and restored design/task compression.
 - `v1.2.1` is a small post-QA polish release: related-spec discovery and conditional PR lifecycle gating.
 

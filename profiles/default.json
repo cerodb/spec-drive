@@ -1,0 +1,6 @@
+{
+  "light": { "mechanism": "subprocess", "cmd": "{CMD} {prompt}" },
+  "standard": { "mechanism": "subprocess", "cmd": "{CMD} {prompt}" },
+  "advanced": { "mechanism": "subprocess", "cmd": "{CMD} {prompt}" },
+  "frontier": { "mechanism": "subprocess", "cmd": "{CMD} {prompt}" }
+}

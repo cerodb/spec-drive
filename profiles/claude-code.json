@@ -1,0 +1,6 @@
+{
+  "light": { "mechanism": "agent", "model": "haiku" },
+  "standard": { "mechanism": "agent", "model": "sonnet" },
+  "advanced": { "mechanism": "agent", "model": "opus" },
+  "frontier": { "mechanism": "subprocess", "cmd": "claude -p --model claude-opus-4-8 --effort high {prompt}" }
+}

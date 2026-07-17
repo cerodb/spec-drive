@@ -1,15 +1,17 @@
 {
   "name": "spec-drive",
-  "version": "1.2.1",
+  "version": "1.3.0",
   "description": "Spec-driven development: idea -> research -> requirements -> design -> tasks -> autonomous execution with quality gates.",
   "license": "MIT",
   "scripts": {
-    "test": "bash test/test-structure.sh && bash test/test-hooks.sh && bash test/test-commands.sh && bash test/test-schema.sh && bash test/test-cross-cli.sh && bash test/test-smoke.sh",
+    "test": "bash test/test-structure.sh && bash test/test-hooks.sh && bash test/test-commands.sh && bash test/test-schema.sh && bash test/test-routing.sh && bash test/test-public-clean.sh && bash test/test-cross-cli.sh && bash test/test-smoke.sh",
     "test:structure": "bash test/test-structure.sh",
     "test:hooks": "bash test/test-hooks.sh",
     "test:commands": "bash test/test-commands.sh",
     "test:schema": "bash test/test-schema.sh",
+    "test:routing": "bash test/test-routing.sh",
     "test:cross-cli": "bash test/test-cross-cli.sh",
-    "test:smoke": "bash test/test-smoke.sh"
+    "test:smoke": "bash test/test-smoke.sh",
+    "test:public-clean": "bash test/test-public-clean.sh"
   }
 }

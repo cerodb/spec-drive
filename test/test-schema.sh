@@ -2,6 +2,15 @@
 # test-schema.sh — Validate spec-drive state schema
 set -euo pipefail
 
+
+echo "-- Model-router schema stability (PG115)..."
+if jq -e '((.properties // {}) | has("model") or has("model_used") or has("modelRouter") or has("modelProfiles") or has("routingProfiles") or has("profiles")) | not' schemas/spec-drive.schema.json >/dev/null; then
+  echo "  OK: model routing does not add state-schema properties"
+else
+  echo "  FAIL: model routing must not add state-schema properties"
+  exit 1
+fi
+
 PLUGIN_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$PLUGIN_ROOT"
 
@@ -166,6 +175,16 @@ if jq -e '.required | index("coordinator") | not' "$SCHEMA" >/dev/null 2>&1; the
 else
   fail "coordinator should not be in required array"
 fi
+
+# 10. Backward-compatible state schema: no routing/model fields added
+echo "-- Backward-compatible state schema..."
+for prop in model model_used profile router; do
+  if jq -e ".properties | has(\"$prop\") | not" "$SCHEMA" >/dev/null 2>&1; then
+    ok "state schema does not add '$prop'"
+  else
+    fail "state schema should not add '$prop'"
+  fi
+done
 
 echo ""
 echo "Passed: $PASS | Failed: $FAIL"

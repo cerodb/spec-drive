@@ -121,6 +121,7 @@ Every task MUST follow this format:
   - **Do**: Numbered steps describing exactly what to implement or verify
   - **Files**: List of files to create or modify
   - **Traces**: AC-1.1, FR-2, NFR-1
+  - **model**: <tier> (optional; one of `light|standard|advanced|frontier`)
   - **Cwd**: <repoRoot or explicit subpath>
   - **Done when**: Observable success condition
   - **Verify**: `shell command that proves it works` (exit 0 on success)
@@ -137,6 +138,93 @@ Task size guidance:
 - split tasks that touch many unrelated files or many unrelated ACs
 - one task should usually fit in roughly one focused coding pass
 - use LOC only as a smell; optimize for clarity, isolation, and verifiability
+
+### Step 3.5: Assign model tier
+
+<mandatory>
+For every task written in Step 3, fill the `**model**:` field using the heuristic below before
+moving on. This annotation happens here — inside the planner, not in a separate coordinator pass —
+because the planner already has each task's `Do`, `Files`, `Traces`, and `Done when` in scope from
+Step 1/Step 3, which is exactly what the six routing signals need.
+</mandatory>
+
+Four CLI-neutral tiers, in increasing capability order: `light` → `standard` → `advanced` →
+`frontier`. `tasks.md` stores only the abstract tier, never a concrete model name.
+
+**Heuristic**: evaluate the task against all six routing signals below. For each signal, determine
+the lowest tier that gives sufficient capability for that signal alone (its "floor"). Then set
+`model:` to the **highest of the six floors**. This is "the lowest tier that still covers the task"
+— any tier below that highest floor would under-serve at least one signal.
+
+1. **Logical complexity** — does the task involve non-trivial business logic, branching, edge cases?
+   - `light`: mechanical change, no conditional logic (rename, format, boilerplate, doc typo)
+   - `standard`: straightforward logic, a few well-understood branches
+   - `advanced`: multi-branch logic, non-obvious edge cases, algorithmic decisions
+   - `frontier`: novel or deeply interacting logic requiring extended reasoning
+
+2. **Surface of impact** — how many files/modules/systems does the change touch?
+   - `light`: one file, isolated
+   - `standard`: a few files within one module/component
+   - `advanced`: multiple modules, or a shared/cross-cutting concern
+   - `frontier`: system-wide, a public API/contract, or cross-repo impact
+
+3. **Reversibility** — how easy is it to undo if the task goes wrong?
+   - `light`: trivially revertable (`git revert`, no side effects, no persisted state)
+   - `standard`: revertable with a small follow-up fix
+   - `advanced`: hard to revert (data migration, published interface, deployed config)
+   - `frontier`: effectively irreversible (prod data loss, security exposure, public release,
+     breaking change already consumed downstream)
+
+4. **External dependencies** — does it call out to APIs, databases, or third-party services?
+   - `light`: none
+   - `standard`: internal, mocked, or local dependencies only
+   - `advanced`: live external API/service integration
+   - `frontier`: external dependency that is critical, financial, or security-sensitive (auth,
+     payments, compliance)
+
+5. **Spec ambiguity** — how much inference is required beyond what is written?
+   - `light`: fully and unambiguously specified in `Do`/`Files`/`Done when`
+   - `standard`: minor inference (naming, a small structural choice)
+   - `advanced`: significant interpretation of intent required, or conflicting hints must be
+     reconciled
+   - `frontier`: the spec is silent or contradictory on a load-bearing question and the judgment
+     call materially changes the outcome
+
+6. **Declared criticality** — did the spec or user explicitly flag this as important?
+   - `light`: not flagged, routine
+   - `standard`: normal feature-level importance, no explicit flag
+   - `advanced`: explicitly marked important, security-relevant, or compliance-relevant in
+     `requirements.md`/`design.md`
+   - `frontier`: explicitly marked critical/blocking, or failure has irreversible business impact
+
+**Decision rule**: with tier ordering `light < standard < advanced < frontier`, compute the
+per-signal floor for all six signals above, then set `model: <highest floor found>`. This
+guarantees all six signals are evaluated for every task (NFR-6) and that the assigned tier is
+reproducible — the same six inputs always yield the same tier, regardless of which CLI or agent
+runs this document.
+
+The user may still hand-edit any `model:` value in `tasks.md` after it is written; that override
+is honored as-is by the executor and is out of scope for this step.
+
+#### Routing reference examples
+
+These examples are calibration examples for the LLM planner. They are not a deterministic unit test
+of model quality; they show how the six-signal heuristic should be applied when writing `model:`.
+
+| Example id | Short task shape | Highest signal floor | Expected tier |
+|---|---|---|---|
+| `01-doc-heading` | Rename one README heading with no behavior change | one isolated mechanical doc edit | `light` |
+| `02-inline-comment` | Add one clarifying comment to a test script | one isolated non-behavioral edit | `light` |
+| `03-command-test` | Add a small command smoke test for a status flag | straightforward test + command docs | `standard` |
+| `04-parse-validation` | Reject an empty config field and cover it | small validation branch across loader/test | `standard` |
+| `05-shared-refactor` | Share task parsing fallback logic across call sites | cross-cutting helper + legacy edge cases | `advanced` |
+| `06-migration-guard` | Add rollback-safe state migration coverage | persisted state + rollback path | `advanced` |
+| `07-auth-rotation` | Rotate live external auth without breaking sessions | live auth + active-session risk | `frontier` |
+| `08-breaking-contract` | Redesign a published task contract for downstream clients | public breaking contract + transition plan | `frontier` |
+
+Use these examples as few-shot calibration when judging new tasks. If a new task resembles one of
+these shapes, start from the matching expected tier and then adjust only if one of the six signals is
+clearly higher or lower in the actual task.
 
 ### Step 4: Verification strategy
 
