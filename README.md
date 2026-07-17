@@ -46,7 +46,7 @@ Scope honesty:
 - Coda and the generic default subprocess profiles remain public stubs. They document the profile
   shape, but commands containing `{MODEL}` or `{CMD}` are intentionally rejected by
   `hooks/scripts/resolve-model.sh` until the user supplies a full local override.
-- Subprocess dispatch uses `agents/executor-subprocess.md`, a CLI-neutral executor contract. Do not
+- Subprocess dispatch uses `agents/executor-subprocess.md`, a CLI-neutral implementer contract. Do not
   send `agents/executor.md` verbatim to subprocess runtimes; it is Claude-Code-flavored.
 - To enable a stubbed or custom subprocess runtime, create `~/.config/spec-drive/profiles.local.json`
   with concrete commands and concrete model names. Do not leave `{MODEL}` or `{CMD}` in the final
@@ -59,28 +59,29 @@ Example local override:
 
 ```json
 {
-  "light": { "mechanism": "subprocess", "cmd": "codex exec -m gpt-5.4-mini -s danger-full-access -- {prompt}" },
-  "standard": { "mechanism": "subprocess", "cmd": "codex exec -m gpt-5.4 -s danger-full-access -- {prompt}" },
-  "advanced": { "mechanism": "subprocess", "cmd": "codex exec -m gpt-5.5 -s danger-full-access -- {prompt}" },
-  "frontier": { "mechanism": "subprocess", "cmd": "codex exec -m gpt-5.6-sol -s danger-full-access -- {prompt}" }
+  "light": { "mechanism": "subprocess", "cmd": "codex exec -m gpt-5.4-mini -s workspace-write -- {prompt}" },
+  "standard": { "mechanism": "subprocess", "cmd": "codex exec -m gpt-5.4 -s workspace-write -- {prompt}" },
+  "advanced": { "mechanism": "subprocess", "cmd": "codex exec -m gpt-5.5 -s workspace-write -- {prompt}" },
+  "frontier": { "mechanism": "subprocess", "cmd": "codex exec -m gpt-5.6-sol -s workspace-write -- {prompt}" }
 }
 ```
 
 Real subprocess probes for v1.3.1 confirmed:
 
-- `codex exec -m <model> -s danger-full-access -- ...` runs successfully for all four mapped Codex tiers above.
-- A Codex subprocess can receive the CLI-neutral executor contract, implement a canary task, verify it,
-  commit it, and end stdout with `TASK_COMPLETE` for the existing parser.
+- `codex exec -m <model> -s workspace-write -- ...` runs successfully for all four mapped Codex tiers above.
+- A Codex subprocess can receive the CLI-neutral implementer contract, implement a canary task, verify it,
+  and end stdout with `TASK_COMPLETE`; the coordinator then re-runs Verify and commits with the exact task message.
 - `claude -p --model claude-opus-4-8 --effort high -- "..."` runs without error and accepts the
   effort flag in practice, not only in `--help` output.
-- A Claude frontier subprocess can run the same canary flow and end stdout with `TASK_COMPLETE`.
+- A Claude frontier subprocess can run the same canary flow and end stdout with `TASK_COMPLETE`; the
+  coordinator owns the commit step.
 
 Notes from the live run:
 
 - `-- {prompt}` is required because executor prompts are Markdown and can begin with `---` frontmatter,
   which CLIs may otherwise parse as options.
-- Codex needs `-s danger-full-access` for executor tasks that commit, because `workspace-write` blocks
-  writes to `.git`. Run subprocess profiles only in trusted local worktrees.
+- Codex runs under `workspace-write`; because executors no longer touch `.git`, no full-access sandbox
+  is required for the public profile.
 
 ## macOS Compatibility
 

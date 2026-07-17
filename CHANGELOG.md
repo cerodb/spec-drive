@@ -7,17 +7,17 @@ Cross-CLI subprocess reality check release.
 ### Highlights
 
 - replaced Codex `{MODEL}` placeholders with concrete Dell-verified model IDs: `gpt-5.4-mini`, `gpt-5.4`, `gpt-5.5`, and `gpt-5.6-sol`
-- added `agents/executor-subprocess.md`, a CLI-neutral subprocess executor contract used by `/spec-drive:implement`
-- documented that `agents/executor.md` remains Claude-Code-flavored and should not be sent verbatim to subprocess runtimes
+- added `agents/executor-subprocess.md`, a CLI-neutral subprocess implementer contract used by `/spec-drive:implement`
+- refactored executor contracts so executors are pure implementers and the coordinator owns git commits/tracking
 - kept the Coda profile as a documented stub for private/local override on the Mac
-- verified real subprocess invocation paths and canary task execution for Codex and Claude frontier, including `TASK_COMPLETE` parser signals
+- verified real subprocess invocation paths and canary task execution for Codex and Claude frontier under sandboxed subprocess profiles, including coordinator-owned exact commits after `TASK_COMPLETE` parser signals
 
 ### Scope notes
 
 - Codex subprocess routing now works out of the box on runtimes with the listed GPT model IDs available.
 - Coda and generic default subprocess profiles still require local overrides because their model IDs/commands are deployment-private.
 - Subprocess stdout must end in `TASK_COMPLETE` or `TASK_BLOCKED: <reason>` so the existing implement parser can consume it unchanged.
-- Codex commit-capable subprocess runs require `-s danger-full-access`; `workspace-write` blocks `.git` writes.
+- Public profiles must not ship a full-access sandbox; `test/test-public-clean.sh` now guards against that regression.
 
 
 ## v1.3.0 — 2026-07-16

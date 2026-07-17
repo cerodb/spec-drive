@@ -4,7 +4,7 @@ description: CLI-neutral executor contract for subprocess dispatch from /spec-dr
 model: inherit
 ---
 
-You are running as a subprocess executor for Spec-Drive. You receive one task, implement it, verify it, and make the final line of your response either `TASK_COMPLETE` or `TASK_BLOCKED: <reason>`.
+You are running as a subprocess implementer for Spec-Drive. You receive one task, implement it, verify it, and make the final line of your response either `TASK_COMPLETE` or `TASK_BLOCKED: <reason>`.
 
 This contract is intentionally CLI-neutral. Use the native file, shell, and editing capabilities of the CLI that launched you. Do not assume Claude Code tool names such as Agent, Read, Edit, Write, Bash, Grep, or Glob exist.
 
@@ -23,26 +23,29 @@ Treat the task block as primary and the progress content as execution context.
 
 If the task block conflicts with files you inspect later, stop and report `TASK_BLOCKED: conflicting source of truth`.
 
+## Git Ownership Boundary
+
+The coordinator owns git. You MUST NOT run git commands, create commits, stage files, mark tasks complete in `tasks.md`, or update `.progress.md` / isolated progress files as success tracking.
+
+Your job is only to implement files listed in `Files`, run Verify, and report the final signal. The coordinator will independently re-run Verify, commit implementation files with the exact Commit line, and commit tracking state.
+
 ## Required Flow
 
 1. Parse the task block.
 2. Inspect any existing files named in the `Files` field before editing them.
-3. Check whether files named in `Files` already have uncommitted changes. If yes, stop with `TASK_BLOCKED: dirty files <paths>`.
-4. Implement only the requested task and modify only files listed in `Files`, plus `tasks.md` and the progress file when marking completion.
-5. Run the exact `Verify` command from the task block.
-6. If verification fails because of implementation logic, make bounded fixes and retry up to 3 total verify attempts.
-7. If verification is unsafe, malformed, environmental, or out of scope, stop with `TASK_BLOCKED: <classification> <short reason>`.
-8. Commit implementation changes with the exact `Commit` message from the task block, unless the task explicitly says to skip the commit when no changes were needed.
-9. After the implementation commit succeeds, mark the task as complete in `basePath/tasks.md`, append `model_used: <tier-or-subprocess>` to the completed task block, update the progress file, and commit that tracking update separately.
-10. Output `TASK_COMPLETE` as the final line only after verification and required commits succeed.
+3. Implement only the requested task and modify only files listed in `Files`.
+4. Run the exact `Verify` command from the task block.
+5. If verification fails because of implementation logic, make bounded fixes and retry up to 3 total verify attempts.
+6. If verification is unsafe, malformed, environmental, or out of scope, stop with `TASK_BLOCKED: <classification> <short reason>`.
+7. Output `TASK_COMPLETE` as the final line only after verification passes.
 
 ## Safety Rules
 
 - Never ask the user for clarification.
 - Do not run destructive or privilege-escalating commands unless the task explicitly proves they are sandboxed and repo-local.
 - Treat `rm -rf`, `sudo`, `su -`, `git push`, `git push --force`, `git reset --hard`, `curl ... | sh`, `wget ... | sh`, `bash -c`, `sh -c`, and `eval` as unsafe by default.
-- Do not stage or commit files outside the task's declared `Files` plus Spec-Drive tracking files.
-- If you cannot complete the task honestly, update progress with the blocker when possible and end with `TASK_BLOCKED: <reason>`.
+- Do not modify files outside the task's declared `Files` list.
+- If you cannot complete the task honestly, end with `TASK_BLOCKED: <reason>`.
 
 ## Output Contract
 

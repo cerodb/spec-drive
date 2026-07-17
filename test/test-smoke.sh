@@ -234,7 +234,7 @@ else
   CODEX_EXIT=$?
   set -e
 
-  if [ "$CODEX_EXIT" -eq 0 ] && printf '%s\n' "$CODEX_OUT" | grep -q '^cmd=codex exec -m gpt-5.4-mini -s danger-full-access -- {prompt}$'; then
+  if [ "$CODEX_EXIT" -eq 0 ] && printf '%s\n' "$CODEX_OUT" | grep -q '^cmd=codex exec -m gpt-5.4-mini -s workspace-write -- {prompt}$'; then
     ok "resolver maps codex light tier to a concrete subprocess command"
   else
     fail "resolver should map codex light tier to a concrete subprocess command"

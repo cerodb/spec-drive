@@ -39,6 +39,19 @@ else
   printf '%s\n' "$matches"
 fi
 
+pat_danger='danger-'"full-access"
+if dangerous_matches="$(grep -RIn --include='*.json' --include='*.md' --include='*.sh' -e "$pat_danger" profiles commands agents hooks test README.md CHANGELOG.md HANDOFF.md .claude-plugin package.json 2>/dev/null || true)"; then
+  :
+fi
+
+if [ -z "$dangerous_matches" ]; then
+  ok "no public profile or docs mention danger-full-access"
+else
+  fail "dangerous full-access sandbox must not ship in public profiles or docs"
+  printf '%s
+' "$dangerous_matches"
+fi
+
 if grep -RIn 'coda-batch --model {MODEL}' . >/dev/null 2>&1; then
   ok "generic coda-batch placeholder is allowed"
 else
