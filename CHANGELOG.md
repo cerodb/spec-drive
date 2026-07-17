@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.3.2 — 2026-07-17
+
+Router activation fix — the model router now actually engages in real runs.
+
+### Fixed
+- `commands/implement.md` invoked `hooks/scripts/resolve-model.sh` with a bare relative path. Because
+  the coordinator's working directory is the user's project (not the plugin), the script was never
+  found and every task silently fell back to the `inherit` mechanism — i.e. the tier router was
+  effectively dead code in v1.3.0/v1.3.1. Now invoked via `"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/resolve-model.sh"`
+  with the same fallback contract as `agents/coordinator.md`. Caught by a live end-to-end run, not by
+  unit tests (which called the resolver with an explicit path).
+
 ## v1.3.1 — 2026-07-17
 
 Cross-CLI subprocess reality check release.
