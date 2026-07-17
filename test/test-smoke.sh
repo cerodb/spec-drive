@@ -228,22 +228,40 @@ else
     fail "resolver should not write stderr for absent model tier"
   fi
 
+  CODEX_STDERR="$TMPDIR_SMOKE/resolve-model-codex.stderr"
+  set +e
+  CODEX_OUT="$(cd "$LEGACY_DIR" && bash "$RESOLVE_MODEL_SCRIPT" light codex 2>"$CODEX_STDERR")"
+  CODEX_EXIT=$?
+  set -e
+
+  if [ "$CODEX_EXIT" -eq 0 ] && printf '%s\n' "$CODEX_OUT" | grep -q '^cmd=codex exec -m gpt-5.4-mini -s workspace-write -- {prompt}$'; then
+    ok "resolver maps codex light tier to a concrete subprocess command"
+  else
+    fail "resolver should map codex light tier to a concrete subprocess command"
+  fi
+
+  if [ ! -s "$CODEX_STDERR" ]; then
+    ok "resolver does not write stderr for concrete codex profile"
+  else
+    fail "resolver should not write stderr for concrete codex profile"
+  fi
+
   PLACEHOLDER_STDERR="$TMPDIR_SMOKE/resolve-model-placeholder.stderr"
   set +e
-  PLACEHOLDER_OUT="$(cd "$LEGACY_DIR" && bash "$RESOLVE_MODEL_SCRIPT" light codex 2>"$PLACEHOLDER_STDERR")"
+  PLACEHOLDER_OUT="$(cd "$LEGACY_DIR" && bash "$RESOLVE_MODEL_SCRIPT" light coda 2>"$PLACEHOLDER_STDERR")"
   PLACEHOLDER_EXIT=$?
   set -e
 
   if [ "$PLACEHOLDER_EXIT" -ne 0 ]; then
-    ok "resolver fails fast for unresolved subprocess placeholders"
+    ok "resolver still fails fast for unresolved coda subprocess placeholders"
   else
-    fail "resolver should fail when shipped subprocess profile still contains placeholders"
+    fail "resolver should fail when shipped coda subprocess profile still contains placeholders"
   fi
 
   if grep -q '^error=unresolved_placeholder$' "$PLACEHOLDER_STDERR"; then
-    ok "resolver reports unresolved_placeholder for template stubs"
+    ok "resolver reports unresolved_placeholder for coda template stubs"
   else
-    fail "resolver should report error=unresolved_placeholder for template stubs"
+    fail "resolver should report error=unresolved_placeholder for coda template stubs"
   fi
 
   if [ -z "$PLACEHOLDER_OUT" ]; then

@@ -32,20 +32,25 @@ This repo is not equally automatic everywhere.
 Honest version: this repo is fully usable today, but only Claude-style runtimes have native plugin metadata in-tree.
 
 
-## Adaptive Model Router (v1.3.0)
+## Adaptive Model Router (v1.3.1)
 
-Spec-Drive v1.3.0 adds optional `model:` task metadata using abstract tiers: `light`,
+Spec-Drive v1.3.1 adds optional `model:` task metadata using abstract tiers: `light`,
 `standard`, `advanced`, and `frontier`. The planner assigns tiers with a six-signal heuristic;
 the executor records `model_used:` for completed tasks.
 
 Scope honesty:
 
-- Out of the box, Claude Code agent routing is the supported automatic path.
-- Cross-CLI subprocess profiles for Codex, Coda, and the generic default profile are public stubs.
-  They document the profile shape, but commands containing `{MODEL}` or `{CMD}` are intentionally
-  rejected by `hooks/scripts/resolve-model.sh` until the user supplies a full local override.
-- To enable a subprocess runtime, create `~/.config/spec-drive/profiles.local.json` with concrete
-  commands and concrete model names. Do not leave `{MODEL}` or `{CMD}` in the final command.
+- Out of the box, Claude Code agent routing is supported.
+- Codex subprocess routing is supported with concrete public model IDs verified on the Dell runtime:
+  `gpt-5.4-mini`, `gpt-5.4`, `gpt-5.5`, and `gpt-5.6-sol`.
+- Coda and the generic default subprocess profiles remain public stubs. They document the profile
+  shape, but commands containing `{MODEL}` or `{CMD}` are intentionally rejected by
+  `hooks/scripts/resolve-model.sh` until the user supplies a full local override.
+- Subprocess dispatch uses `agents/executor-subprocess.md`, a CLI-neutral implementer contract. Do not
+  send `agents/executor.md` verbatim to subprocess runtimes; it is Claude-Code-flavored.
+- To enable a stubbed or custom subprocess runtime, create `~/.config/spec-drive/profiles.local.json`
+  with concrete commands and concrete model names. Do not leave `{MODEL}` or `{CMD}` in the final
+  command.
 - Routing quality is LLM-driven: `agents/task-planner.md` contains reference examples used as
   few-shot calibration. The shell suite checks fixture/example consistency; it does not claim to
   deterministically unit-test the LLM's judgment.
@@ -54,14 +59,29 @@ Example local override:
 
 ```json
 {
-  "light": { "mechanism": "subprocess", "cmd": "codex exec -m gpt-5.4 {prompt}" },
-  "standard": { "mechanism": "subprocess", "cmd": "codex exec -m gpt-5.4 {prompt}" },
-  "advanced": { "mechanism": "subprocess", "cmd": "codex exec -m gpt-5.4 {prompt}" },
-  "frontier": { "mechanism": "subprocess", "cmd": "codex exec -m gpt-5.4 {prompt}" }
+  "light": { "mechanism": "subprocess", "cmd": "codex exec -m gpt-5.4-mini -s workspace-write -- {prompt}" },
+  "standard": { "mechanism": "subprocess", "cmd": "codex exec -m gpt-5.4 -s workspace-write -- {prompt}" },
+  "advanced": { "mechanism": "subprocess", "cmd": "codex exec -m gpt-5.5 -s workspace-write -- {prompt}" },
+  "frontier": { "mechanism": "subprocess", "cmd": "codex exec -m gpt-5.6-sol -s workspace-write -- {prompt}" }
 }
 ```
 
-`claude -p --help` confirms the shipped Claude Code frontier command can use `--effort high`.
+Real subprocess probes for v1.3.1 confirmed:
+
+- `codex exec -m <model> -s workspace-write -- ...` runs successfully for all four mapped Codex tiers above.
+- A Codex subprocess can receive the CLI-neutral implementer contract, implement a canary task, verify it,
+  and end stdout with `TASK_COMPLETE`; the coordinator then re-runs Verify and commits with the exact task message.
+- `claude -p --model claude-opus-4-8 --effort high -- "..."` runs without error and accepts the
+  effort flag in practice, not only in `--help` output.
+- A Claude frontier subprocess can run the same canary flow and end stdout with `TASK_COMPLETE`; the
+  coordinator owns the commit step.
+
+Notes from the live run:
+
+- `-- {prompt}` is required because executor prompts are Markdown and can begin with `---` frontmatter,
+  which CLIs may otherwise parse as options.
+- Codex runs under `workspace-write`; because executors no longer touch `.git`, no full-access sandbox
+  is required for the public profile.
 
 ## macOS Compatibility
 
@@ -76,7 +96,7 @@ Prerequisites on macOS: `bash`, `git`, `jq`. Install `jq` via Homebrew (`brew in
 
 ## Release Notes
 
-- Current release: `v1.3.0` (2026-07-16)
+- Current release: `v1.3.1` (2026-07-17)
 - `v1.2.0` packaged the successful P336 calibration pass: direct `tasks` command surface, tighter coordinator conflict scoring, and restored design/task compression.
 - `v1.2.1` is a small post-QA polish release: related-spec discovery and conditional PR lifecycle gating.
 
