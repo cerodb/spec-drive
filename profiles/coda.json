@@ -1,6 +1,6 @@
 {
-  "light": { "mechanism": "subprocess", "cmd": "coda-batch --model {MODEL} {prompt}" },
-  "standard": { "mechanism": "subprocess", "cmd": "coda-batch --model {MODEL} {prompt}" },
-  "advanced": { "mechanism": "subprocess", "cmd": "coda-batch --model {MODEL} {prompt}" },
-  "frontier": { "mechanism": "subprocess", "cmd": "coda-batch --model {MODEL} {prompt}" }
+  "light": { "mechanism": "subprocess", "cmd": "coda-batch --model {MODEL} -pf {promptfile}" },
+  "standard": { "mechanism": "subprocess", "cmd": "coda-batch --model {MODEL} -pf {promptfile}" },
+  "advanced": { "mechanism": "subprocess", "cmd": "coda-batch --model {MODEL} -pf {promptfile}" },
+  "frontier": { "mechanism": "subprocess", "cmd": "coda-batch --model {MODEL} -pf {promptfile}" }
 }

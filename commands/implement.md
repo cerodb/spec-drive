@@ -151,18 +151,17 @@ Before delegating a Regular Task, resolve its `model:` tier to a concrete dispat
    with no `model:` field. Capture stdout and parse the three `key=value` lines it always emits:
    - `mechanism=` -- one of `agent`, `subprocess`, `inherit`
    - `model=` -- concrete model id (set only when `mechanism=agent`)
-   - `cmd=` -- command template with `{prompt}` placeholder (set only when
+   - `cmd=` -- command template with `{promptfile}` placeholder (set only when
      `mechanism=subprocess`; shipped `{MODEL}`/`{CMD}` profile stubs must be overridden before use)
 3. Branch the dispatch on `mechanism`:
    - **`mechanism=agent`** -- invoke `spec-drive:executor` via the Agent tool WITH the resolved
      `model` added as a parameter: `Agent(subagent_type: "spec-drive:executor", model: <resolved
      model>, prompt: <executor contract>)`. Same call as the inherit case below, one field added.
-   - **`mechanism=subprocess`** -- read `agents/executor-subprocess.md` and run the profile's `cmd`
-     template via the Bash tool, substituting `{prompt}` with the CLI-neutral subprocess implementer
-     contract plus the exact "Execute this task: basePath / Task Block / Progress" text used in the
-     Agent-tool prompt below. Quote or otherwise pass the substituted prompt as one argument/stdin
-     according to the runtime's command template. Capture the subprocess's stdout and parse the
-     trailing `TASK_COMPLETE` / `TASK_BLOCKED` line exactly as Step 7 parses agent results today.
+   - **`mechanism=subprocess`** -- read `agents/executor-subprocess.md`, write the full CLI-neutral
+     subprocess implementer prompt to a secure temporary file, and run the profile's `cmd` template via
+     the Bash tool after substituting `{promptfile}` with that file path. Never substitute prompt
+     content into the shell command line. Capture the subprocess's stdout and parse the trailing
+     `TASK_COMPLETE` / `TASK_BLOCKED` line exactly as Step 7 parses agent results today.
    - **`mechanism=inherit`** -- current behavior: invoke `spec-drive:executor` via the Agent tool with
      no `model` parameter (the agent runs on whatever model the coordinator itself is running on).
      This is the fallback for tasks with no `model:` field and unknown/unresolvable tiers.
@@ -193,10 +192,9 @@ the resolution step above:
 
 - **`mechanism=subprocess`**:
   ```
-  Bash: <profile cmd template, {prompt} substituted>
-
-  where {prompt} =
-  """
+  promptFile="$(mktemp "${TMPDIR:-/tmp}/spec-drive-subprocess-prompt.XXXXXX")"
+  chmod 600 "$promptFile"
+  cat >"$promptFile" <<'SPEC_DRIVE_PROMPT'
   <CLI-neutral subprocess implementer contract (agents/executor-subprocess.md instructions)>
 
   Execute this task:
@@ -208,10 +206,12 @@ the resolution step above:
 
   Progress:
   {contents of basePath/.progress.md}
-  """
+  SPEC_DRIVE_PROMPT
+  Bash: <profile cmd template, {promptfile} substituted with "$promptFile">
+  rm -f "$promptFile"
   ```
   Parse the subprocess's stdout for a trailing `TASK_COMPLETE` or `TASK_BLOCKED` line, same as Step 7.
-  Do not send `agents/executor.md` verbatim to subprocess runtimes; that contract is optimized for
+  Do not put the prompt content directly on the shell command line. Do not send `agents/executor.md` verbatim to subprocess runtimes; that contract is optimized for
   Claude Code's Agent-tool execution surface and may mention tool names or delegation patterns that
   other CLIs do not implement.
 

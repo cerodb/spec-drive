@@ -17,7 +17,7 @@
 # Output (key=value stdout, one per line):
 #   mechanism=<agent|subprocess|inherit>
 #   model=<id or empty>
-#   cmd=<template or empty; subprocess templates must only leave {prompt} unresolved>
+#   cmd=<template or empty; subprocess templates must only leave {promptfile} unresolved>
 
 set -euo pipefail
 
@@ -134,16 +134,27 @@ if [ -z "$mechanism" ]; then
     exit 0
 fi
 
-# Subprocess mechanism requires a `{prompt}` placeholder in the cmd template
-# so the dispatcher can substitute the actual task prompt. A template missing
-# it is a config error, not a routing miss — fail fast per design "Error
-# Handling" (env_error), rather than silently dispatching a broken command.
+# Subprocess prompts are passed to the CLI via a FILE the coordinator writes
+# ({promptfile}), never interpolated inline on the shell command line. This
+# removes the shell-injection surface (v1.3.3 hardening): model/task content
+# must not reach the shell as command-line text.
 if [ "$mechanism" = "subprocess" ]; then
+    # Inline {prompt} is no longer supported. Reject it explicitly so a stale or
+    # hostile profile cannot slip model content onto the command line.
     case "$cmd" in
-        *'{prompt}'*) ;;
+        *'{prompt}'*)
+            printf 'error=invalid_profile\n' >&2
+            printf 'reason=inline {prompt} is not supported for subprocess dispatch (shell-injection risk); use {promptfile} so the prompt is passed via a file, not the shell command line: %s\n' "$cmd" >&2
+            exit 1
+            ;;
+    esac
+
+    # A subprocess template must consume the prompt via {promptfile}.
+    case "$cmd" in
+        *'{promptfile}'*) ;;
         *)
-            printf 'error=malformed_template\n' >&2
-            printf 'reason=subprocess cmd template missing required {prompt} placeholder: %s\n' "$cmd" >&2
+            printf 'error=invalid_profile\n' >&2
+            printf 'reason=subprocess cmd template must consume the prompt via {promptfile}: %s\n' "$cmd" >&2
             exit 1
             ;;
     esac
