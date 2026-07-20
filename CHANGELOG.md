@@ -2,84 +2,46 @@
 
 ## v1.3.4 — 2026-07-20
 
-Cleanliness-gate hardening (test-only; no functional or security change to the plugin).
-
-### Fixed
-- `test/test-public-clean.sh` stored the private-identifier deny-list as plaintext pattern
-  definitions, so the cleanliness scan (and any external security grep, even for a partial substring
-  like `GLM-`) matched the test file itself — a recurring false positive that bit twice during
-  development and caused source/marketplace divergence. The deny-list is now stored base64-encoded and
-  decoded at runtime, so the file contains no plaintext copy of the terms it screens for. Detection is
-  unchanged — verified by injecting a fake private backend/model identifier into a scratch file and
-  confirming the gate still fails (the literal is omitted here so this changelog stays clean too).
+- Internal test-tooling cleanup so a consistency check no longer flags its own configuration. No functional change to the plugin.
 
 ## v1.3.3 — 2026-07-17
 
-Subprocess prompt-file hardening release.
+- Subprocess model tiers now receive the task prompt via a file (`{promptfile}`) instead of inline command-line text — more robust for large prompts and text containing special characters.
+- Codex, Claude frontier, and Coda subprocess profile templates updated to consume the prompt file / stdin.
+- The model resolver requires `{promptfile}` for subprocess profiles.
 
-### Highlights
-
-- replaced inline subprocess prompt interpolation with `{promptfile}` command templates
-- updated coordinator dispatch docs to write the full subprocess prompt to a chmod 600 temp file and pass only the path to the host shell
-- updated Codex, Claude frontier, and Coda subprocess profile templates to consume prompt files/stdin instead of inline prompt text
-- extended resolver validation so subprocess profiles require `{promptfile}` and reject inline `{prompt}`
-- added live security regression coverage for shell metacharacters in task text: prompt content mentioning `$(touch /tmp/pwned)` must not execute on the host
-
-### Scope notes
-
-- Executors remain pure implementers; the coordinator still owns git commits and tracking updates.
-- Public subprocess profiles stay sandboxed (`workspace-write` for Codex) and never require full-access defaults.
+Notes:
+- Executors remain pure implementers; the coordinator owns git commits and tracking updates.
+- Codex subprocess profiles run under `workspace-write`.
 
 ## v1.3.2 — 2026-07-17
 
-Router activation fix — the model router now actually engages in real runs.
-
-### Fixed
-- `commands/implement.md` invoked `hooks/scripts/resolve-model.sh` with a bare relative path. Because
-  the coordinator's working directory is the user's project (not the plugin), the script was never
-  found and every task silently fell back to the `inherit` mechanism — i.e. the tier router was
-  effectively dead code in v1.3.0/v1.3.1. Now invoked via `"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/resolve-model.sh"`
-  with the same fallback contract as `agents/coordinator.md`. Caught by a live end-to-end run, not by
-  unit tests (which called the resolver with an explicit path).
+- Fixed: the model resolver is now located via `${CLAUDE_PLUGIN_ROOT}`, so routing engages regardless of the working directory. Previously a relative path meant the resolver was not found and tasks fell back to the session model.
 
 ## v1.3.1 — 2026-07-17
 
-Cross-CLI subprocess reality check release.
+- Codex subprocess profiles ship with concrete GPT model IDs (`gpt-5.4-mini`, `gpt-5.4`, `gpt-5.5`, `gpt-5.6-sol`).
+- Added `agents/executor-subprocess.md`, a CLI-neutral subprocess implementer contract used by `/spec-drive:implement`.
+- Executors are pure implementers; the coordinator owns git commits and tracking updates.
+- Coda and generic default subprocess profiles remain documented stubs requiring a local `profiles.local.json` override.
 
-### Highlights
-
-- replaced Codex `{MODEL}` placeholders with concrete Dell-verified model IDs: `gpt-5.4-mini`, `gpt-5.4`, `gpt-5.5`, and `gpt-5.6-sol`
-- added `agents/executor-subprocess.md`, a CLI-neutral subprocess implementer contract used by `/spec-drive:implement`
-- refactored executor contracts so executors are pure implementers and the coordinator owns git commits/tracking
-- kept the Coda profile as a documented stub for private/local override on the Mac
-- verified real subprocess invocation paths and canary task execution for Codex and Claude frontier under sandboxed subprocess profiles, including coordinator-owned exact commits after `TASK_COMPLETE` parser signals
-
-### Scope notes
-
-- Codex subprocess routing now works out of the box on runtimes with the listed GPT model IDs available.
-- Coda and generic default subprocess profiles still require local overrides because their model IDs/commands are deployment-private.
+Notes:
+- Codex subprocess routing works out of the box on runtimes where those model IDs are available.
 - Subprocess stdout must end in `TASK_COMPLETE` or `TASK_BLOCKED: <reason>` so the existing implement parser can consume it unchanged.
-- Public profiles must not ship a full-access sandbox; `test/test-public-clean.sh` now guards against that regression.
-
 
 ## v1.3.0 — 2026-07-16
 
-Adaptive model router release for spec execution.
+Adaptive model router for spec execution.
 
-### Highlights
+- Added optional `model:` and `model_used:` task metadata while preserving existing task files.
+- Introduced abstract routing tiers (`light`, `standard`, `advanced`, `frontier`) with Claude Code routing and generic cross-CLI profile stubs.
+- Wired `/spec-drive:implement` dispatch through the model resolver with safe inherit fallbacks.
+- Added routing reference fixtures as planner calibration examples, legacy no-model compatibility coverage, and schema-stability checks.
 
-- added optional `model:` and `model_used:` task metadata while preserving existing task files
-- introduced abstract routing tiers (`light`, `standard`, `advanced`, `frontier`) with Claude Code routing and generic cross-CLI profile stubs
-- wired `/spec-drive:implement` dispatch through the model resolver with safe inherit fallbacks and fail-fast errors for unresolved subprocess placeholders
-- added routing reference fixtures as planner calibration examples, legacy no-model compatibility coverage, schema-stability checks, and a public-repo cleanliness gate
-- kept private/local provider details out of the public plugin; Codex/Coda/default subprocess profiles require local `profiles.local.json` overrides before use
-
-### Scope notes
-
+Notes:
 - Out-of-box automatic model routing is supported for Claude Code agent profiles.
-- Codex, Coda, and default subprocess profiles are scaffolding stubs; users must provide concrete local commands without `{MODEL}` or `{CMD}`.
-- Routing quality remains LLM-driven. The fixtures calibrate the planner prompt and are checked for reference consistency, not deterministic LLM-quality scoring.
-- `claude -p --help` confirms `--effort` is accepted for the shipped Claude Code frontier subprocess command.
+- Codex, Coda, and default subprocess profiles are scaffolding stubs; users provide concrete local commands via `profiles.local.json`.
+- Routing quality is LLM-driven; the fixtures calibrate the planner prompt and are checked for reference consistency, not deterministic scoring.
 
 ## v1.2.1 — 2026-04-18
 

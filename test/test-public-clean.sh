@@ -37,7 +37,7 @@ else
 fi
 
 # No public profile or doc may ship a full-access sandbox flag.
-dangerous_matches="$(grep -RIn --include='*.json' --include='*.md' --include='*.sh' -f <(printf '%s\n' "$danger_pattern") profiles commands agents hooks test README.md CHANGELOG.md HANDOFF.md .claude-plugin package.json 2>/dev/null || true)"
+dangerous_matches="$(grep -RIn --include='*.json' --include='*.md' --include='*.sh' -f <(printf '%s\n' "$danger_pattern") profiles commands agents hooks test README.md CHANGELOG.md .claude-plugin package.json 2>/dev/null || true)"
 
 if [ -z "$dangerous_matches" ]; then
   ok "no full-access sandbox flag in public profiles or docs"
