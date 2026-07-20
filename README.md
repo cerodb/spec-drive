@@ -41,7 +41,7 @@ the executor records `model_used:` for completed tasks.
 Scope honesty:
 
 - Out of the box, Claude Code agent routing is supported.
-- Codex subprocess routing is supported with concrete public model IDs verified on the Dell runtime:
+- Codex subprocess routing is supported with concrete public GPT model IDs:
   `gpt-5.4-mini`, `gpt-5.4`, `gpt-5.5`, and `gpt-5.6-sol`.
 - Coda and the generic default subprocess profiles remain public stubs. They document the profile
   shape, but commands containing `{MODEL}` or `{CMD}` are intentionally rejected by
@@ -78,10 +78,8 @@ Real subprocess probes for v1.3.1 confirmed:
 
 Notes from the live run:
 
-- Subprocess prompts are written to a temporary file and profiles receive `{promptfile}` only; prompt
-  content is never interpolated into the host shell command line.
-- Codex runs under `workspace-write`; because executors no longer touch `.git`, no full-access sandbox
-  is required for the public profile.
+- Subprocess model tiers receive the task prompt via a temporary file (`{promptfile}`).
+- Codex subprocess profiles run under `workspace-write`; executors write task files only and the coordinator owns git commits.
 
 ## macOS Compatibility
 
@@ -314,18 +312,9 @@ If you discover design flaws mid-execution, use `refactor` to coherently update 
 /spec-drive:refactor
 ```
 
-## Safety Notes
+## Notes
 
-This repo includes hardening for:
-
-- safe project-path validation
-- ambiguous project detection
-- bounded iteration caps
-- safer state-file updates
-- deletion guards in cancel flows
-- guardrails against dangerous verify commands
-
-Still, this is an agentic execution workflow. Review before tagging or exposing it publicly in environments you do not control.
+This is an agentic execution workflow: it runs commands and writes files on your behalf. Review the generated task plan before running `/spec-drive:implement`, and review the resulting changes before merging or tagging.
 
 ## Cross-CLI Design Goal
 

@@ -135,16 +135,15 @@ if [ -z "$mechanism" ]; then
 fi
 
 # Subprocess prompts are passed to the CLI via a FILE the coordinator writes
-# ({promptfile}), never interpolated inline on the shell command line. This
-# removes the shell-injection surface (v1.3.3 hardening): model/task content
-# must not reach the shell as command-line text.
+# ({promptfile}), not interpolated inline on the shell command line. Passing the
+# prompt as a file path keeps large prompts and prompts with special characters
+# intact and predictable.
 if [ "$mechanism" = "subprocess" ]; then
-    # Inline {prompt} is no longer supported. Reject it explicitly so a stale or
-    # hostile profile cannot slip model content onto the command line.
+    # Inline {prompt} is no longer supported; subprocess profiles must use {promptfile}.
     case "$cmd" in
         *'{prompt}'*)
             printf 'error=invalid_profile\n' >&2
-            printf 'reason=inline {prompt} is not supported for subprocess dispatch (shell-injection risk); use {promptfile} so the prompt is passed via a file, not the shell command line: %s\n' "$cmd" >&2
+            printf 'reason=inline {prompt} is not supported for subprocess dispatch; use {promptfile} so the prompt is passed via a file: %s\n' "$cmd" >&2
             exit 1
             ;;
     esac
