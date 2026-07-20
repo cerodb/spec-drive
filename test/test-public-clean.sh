@@ -36,13 +36,13 @@ else
   printf '%s\n' "$matches"
 fi
 
-# No public profile or doc may ship a full-access sandbox flag.
+# Public profiles keep the default sandbox; the unrestricted-sandbox flag is not shipped.
 dangerous_matches="$(grep -RIn --include='*.json' --include='*.md' --include='*.sh' -f <(printf '%s\n' "$danger_pattern") profiles commands agents hooks test README.md CHANGELOG.md .claude-plugin package.json 2>/dev/null || true)"
 
 if [ -z "$dangerous_matches" ]; then
-  ok "no full-access sandbox flag in public profiles or docs"
+  ok "public profiles use the default sandbox"
 else
-  fail "dangerous full-access sandbox must not ship in public profiles or docs"
+  fail "the unrestricted-sandbox flag must not ship in public profiles"
   printf '%s\n' "$dangerous_matches"
 fi
 
