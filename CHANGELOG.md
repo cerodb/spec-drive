@@ -10,7 +10,8 @@ Cleanliness-gate hardening (test-only; no functional or security change to the p
   like `GLM-`) matched the test file itself — a recurring false positive that bit twice during
   development and caused source/marketplace divergence. The deny-list is now stored base64-encoded and
   decoded at runtime, so the file contains no plaintext copy of the terms it screens for. Detection is
-  unchanged (verified: an injected `globant_dgx/GLM-4.6` still fails the gate).
+  unchanged — verified by injecting a fake private backend/model identifier into a scratch file and
+  confirming the gate still fails (the literal is omitted here so this changelog stays clean too).
 
 ## v1.3.3 — 2026-07-17
 
