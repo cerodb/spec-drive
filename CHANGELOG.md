@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.3.4 — 2026-07-20
+
+Cleanliness-gate hardening (test-only; no functional or security change to the plugin).
+
+### Fixed
+- `test/test-public-clean.sh` stored the private-identifier deny-list as plaintext pattern
+  definitions, so the cleanliness scan (and any external security grep, even for a partial substring
+  like `GLM-`) matched the test file itself — a recurring false positive that bit twice during
+  development and caused source/marketplace divergence. The deny-list is now stored base64-encoded and
+  decoded at runtime, so the file contains no plaintext copy of the terms it screens for. Detection is
+  unchanged (verified: an injected `globant_dgx/GLM-4.6` still fails the gate).
+
 ## v1.3.3 — 2026-07-17
 
 Subprocess prompt-file hardening release.
