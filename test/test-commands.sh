@@ -18,6 +18,28 @@ fail() {
   echo "  FAIL: $1"
 }
 
+assert_contains() {
+  local file="$1"
+  local pattern="$2"
+  local label="$3"
+  if grep -Eq "$pattern" "$file"; then
+    ok "$label"
+  else
+    fail "$label"
+  fi
+}
+
+assert_not_contains() {
+  local file="$1"
+  local pattern="$2"
+  local label="$3"
+  if grep -Eq "$pattern" "$file"; then
+    fail "$label"
+  else
+    ok "$label"
+  fi
+}
+
 COMMANDS=(new research requirements design tasks implement status cancel help list switch refactor)
 
 echo "=== Spec-Drive Commands Test ==="
@@ -404,6 +426,38 @@ if [ -f "$NEW_FILE" ]; then
 else
   fail "commands/new.md does not exist"
 fi
+
+echo "-- Checking local artifact-topology guidance..."
+for DOC in skills/spec-workflow/SKILL.md README.md INSTALL.md; do
+  assert_contains "$DOC" '`spec/`.*canonical Spec-Drive lifecycle artifacts and workflow state' "$DOC defines spec/ as canonical lifecycle/workflow state"
+  assert_contains "$DOC" '`audit/`.*audits, evidence, diagnostics, investigations, and hygiene records' "$DOC defines audit/ scope"
+  assert_contains "$DOC" '`input/`.*(received or collected source material|source material received or collected|received.*source material|collected.*source material)' "$DOC defines input/ scope"
+  assert_contains "$DOC" '`output/`.*(non-spec deliverables|deliverables that are not canonical Spec-Drive lifecycle artifacts)' "$DOC defines output/ scope"
+  assert_contains "$DOC" 'must use these names instead of' "$DOC requires canonical directory names over ad hoc alternatives"
+  assert_contains "$DOC" 'optional' "$DOC marks audit/input/output as optional"
+  assert_contains "$DOC" '([Cc]reated|[Cc]reate).*only immediately before.*first content' "$DOC requires lazy optional directory creation"
+done
+
+echo "-- Checking topology and precedence guidance..."
+for DOC in skills/spec-workflow/SKILL.md README.md INSTALL.md; do
+  assert_contains "$DOC" 'heterogeneous' "$DOC mentions heterogeneous workspace topology"
+  assert_contains "$DOC" 'project scope' "$DOC mentions project scope"
+  assert_contains "$DOC" 'workspace scope' "$DOC mentions workspace scope"
+  assert_contains "$DOC" 'legacy XDG' "$DOC mentions legacy XDG scope"
+  assert_contains "$DOC" 'present but invalid|invalid.*fail' "$DOC states invalid-present failure"
+  assert_contains "$DOC" 'absent.*falls? through|falls? through to the next|falls? back to the next' "$DOC states absent-scope fallback"
+  assert_contains "$DOC" '(portable project identity|[Pp]roject identity stays portable)' "$DOC states portable project identity"
+done
+
+echo "-- Checking owner-approval publication gate..."
+for DOC in skills/spec-workflow/SKILL.md README.md INSTALL.md; do
+  assert_contains "$DOC" 'local source repositor(y|ies).*separate from.*distribution|separate from any distribution or marketplace sync|separate from marketplace/distribution sync' "$DOC separates local source from distribution sync"
+  assert_contains "$DOC" 'issue, push, pull request, release, publication' "$DOC enumerates public actions behind owner approval"
+  assert_contains "$DOC" 'separate explicit owner approval' "$DOC requires separate explicit owner approval"
+  assert_not_contains "$DOC" 'SharedMemory' "$DOC does not mention SharedMemory"
+  assert_not_contains "$DOC" 'P354c' "$DOC does not mention P354c"
+  assert_not_contains "$DOC" '/home/' "$DOC does not leak private local absolute paths"
+done
 
 echo ""
 echo "Commands checked: ${#COMMANDS[@]}"

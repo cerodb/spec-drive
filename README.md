@@ -137,8 +137,8 @@ clawhub install spec-drive
 
 Current reality:
 
-- this source repo is still the development/source-of-truth repo
-- the marketplace/distribution path is now live
+- this source repo is the local source-of-truth checkout for development and validation
+- marketplace/distribution sync is a separate channel, not an automatic consequence of local edits here
 - direct source-repo setup remains a developer/bootstrap path, not the preferred end-user install story
 
 ### 1. Clone
@@ -208,37 +208,49 @@ This is deliberate. The portability claim is about the artifact/protocol design,
 
 ## Project Layout at Runtime
 
-By default, projects live under:
+Spec-Drive uses four canonical project destinations:
+
+- `spec/` for canonical Spec-Drive lifecycle artifacts and workflow state
+- `audit/` for project-scoped audits, evidence, diagnostics, investigations, and hygiene records that are neither lifecycle canon nor deliverables
+- `input/` for received or collected source material
+- `output/` for non-spec deliverables
+
+Agents executing Spec-Drive projects must use these names instead of ad hoc equivalents when the content matches one of those roles.
+
+The initial scaffold is intentionally minimal. It contains only the project root configuration plus the required `spec/` core. `audit/`, `input/`, and `output/` are optional and must be created only immediately before their first content is written.
+
+Example runtime shape:
 
 ```text
-~/spec-drive-projects/
-  my-project/
-    spec/
-      idea.md
-      research.md
-      requirements.md
-      design.md
-      tasks.md
-      .progress.md
-      .spec-drive-state.json
+workspace-root/
+  .spec-drive-config.json        # optional workspace-scope topology
+  projects/
+    my-project/
+      .spec-drive-config.json    # required project-scope identity/overrides
+      spec/
+        idea.md
+        .progress.md
+        .spec-drive-state.json
+      audit/                     # optional, created lazily
+      input/                     # optional, created lazily
+      output/                    # optional, created lazily
 ```
 
-The project root can be overridden with the first config file found in this order:
+Workspace topology can be heterogeneous. A workspace may contain multiple independent project roots, including nested Git repositories, and Spec-Drive still resolves configuration per key by scope rather than by picking one whole file.
 
-```text
-.spec-drive-config.json           # at nearest git root, or cwd if no git root
-~/.config/spec-drive/config.json # or $XDG_CONFIG_HOME/spec-drive/config.json
-```
+Per-key precedence is:
 
-Example:
+1. project scope
+2. workspace scope
+3. legacy XDG scope
 
-```json
-{
-  "projectRoot": "./spec-drive-projects"
-}
-```
+Resolution rules:
 
-If `projectRoot` is relative, it is resolved relative to the config file location. That makes workspace-scoped configs portable across machines.
+- A project scope can override only the keys it defines; omitted keys continue to workspace or legacy XDG.
+- A configuration that is present but invalid fails immediately instead of being ignored.
+- An absent scope falls through to the next precedence tier.
+- Legacy XDG remains a compatibility fallback, not the preferred source of truth.
+- Project identity stays portable by keeping topology in workspace scope and project-specific identity/overrides in project scope.
 
 ## Commands
 
@@ -315,6 +327,8 @@ If you discover design flaws mid-execution, use `refactor` to coherently update 
 ## Notes
 
 This is an agentic execution workflow: it runs commands and writes files on your behalf. Review the generated task plan before running `/spec-drive:implement`, and review the resulting changes before merging or tagging.
+
+This local source repository is separate from any marketplace or distribution sync. No issue, push, pull request, release, publication, or marketplace/distribution sync is authorized by local validation alone; each requires separate explicit owner approval.
 
 ## Cross-CLI Design Goal
 

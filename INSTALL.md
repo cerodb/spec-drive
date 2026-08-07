@@ -9,6 +9,7 @@ Important install note:
 - the preferred install path is marketplace installation for Claude-compatible runtimes
 - this source-repo install path is still useful for development and validation
 - but it should not be treated as the final preferred distribution experience
+- local installation and validation do not authorize marketplace/distribution sync or any other public action
 
 Preferred marketplace commands:
 
@@ -67,28 +68,55 @@ bash test/test-cross-cli.sh
 
 ## 3. Configure Project Storage
 
-Default project root:
+Spec-Drive separates workspace topology from portable project identity.
+
+Canonical project destinations:
+
+- `spec/` for canonical Spec-Drive lifecycle artifacts and workflow state
+- `audit/` for project-scoped audits, evidence, diagnostics, investigations, and hygiene records that are neither lifecycle canon nor deliverables
+- `input/` for received or collected source material
+- `output/` for non-spec deliverables
+
+Agents executing Spec-Drive projects must use these names instead of equivalent ad hoc directories.
+
+Initial scaffold contract:
+
+- create only the project root configuration plus the required `spec/` core
+- do not pre-create `audit/`, `input/`, or `output`
+- create each optional directory only immediately before its first content is written
+
+Workspace topology can be heterogeneous. A workspace may contain multiple independent project roots, including nested Git repositories.
+
+Configuration resolves per key with this precedence:
+
+1. project scope
+2. workspace scope
+3. legacy XDG scope
+
+Resolver behavior:
+
+- project scope carries portable project identity and project-local overrides
+- workspace scope carries node-local topology such as the projects container
+- an absent scope falls through to the next tier
+- a present but invalid scope fails instead of being ignored
+- legacy XDG remains a compatibility fallback
+
+Example layout:
 
 ```text
-~/spec-drive-projects
+workspace-root/
+  .spec-drive-config.json
+  projects/
+    my-project/
+      .spec-drive-config.json
+      spec/
+        idea.md
+        .progress.md
+        .spec-drive-state.json
+      audit/   # optional, created lazily
+      input/   # optional, created lazily
+      output/  # optional, created lazily
 ```
-
-Optional override file. Resolution order is first-match-wins:
-
-```text
-.spec-drive-config.json           # at nearest git root, or cwd if no git root
-~/.config/spec-drive/config.json # or $XDG_CONFIG_HOME/spec-drive/config.json
-```
-
-Example:
-
-```json
-{
-  "projectRoot": "./spec-drive-projects"
-}
-```
-
-If `projectRoot` is relative, it is resolved relative to the config file location.
 
 ## Claude-Compatible Installation
 
@@ -266,3 +294,5 @@ The current repo already includes guardrails for:
 - unsafe verify-command rejection
 
 Even so, do not treat installation as “fire and forget.” Run the smoke test in a disposable project first.
+
+The local source repository is separate from marketplace/distribution sync. Every issue, push, pull request, release, publication, or marketplace/distribution sync requires separate explicit owner approval.

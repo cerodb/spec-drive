@@ -54,3 +54,40 @@ State is tracked in `.spec-drive-state.json` within the project's spec/ director
 - `taskIndex`: Current task during execution phase
 - `taskIteration`: Retry count for current task (resets per task)
 - `globalIteration`: Total loop iterations across all tasks
+
+## Project Artifact Topology
+
+Spec-Drive project roots use four canonical destinations:
+
+- `spec/` holds canonical Spec-Drive lifecycle artifacts and workflow state.
+- `audit/` holds project-scoped audits, evidence, diagnostics, investigations, and hygiene records that are neither lifecycle canon nor deliverables.
+- `input/` holds source material received or collected for the project.
+- `output/` holds generated deliverables that are not canonical Spec-Drive lifecycle artifacts.
+
+Agents executing Spec-Drive projects must use these names instead of ad hoc equivalents such as `docs/`, `notes/`, `artifacts/`, `evidence/`, `deliverables/`, or `tmp/` when the content belongs in one of the canonical destinations above.
+
+`audit/`, `input/`, and `output/` are optional. Create each optional directory only immediately before writing its first content. The initial scaffold remains only the project root configuration plus the required `spec/` core.
+
+## Configuration Scope And Portability
+
+Workspace topology may be heterogeneous: a workspace can contain multiple independent project roots, including nested Git repositories, without changing the project artifact contract.
+
+Resolve configuration per key with this precedence:
+
+1. project scope
+2. workspace scope
+3. legacy XDG scope
+
+Rules:
+
+- Project scope carries portable project identity and project-local overrides.
+- Workspace scope carries node-local topology such as the projects container.
+- A present but invalid configuration at any scope is an error and must fail instead of being ignored.
+- An absent scope falls back to the next scope in precedence order.
+- Legacy XDG remains a lowest-precedence compatibility fallback.
+
+## Publication Boundary
+
+The local source repository is separate from any distribution or marketplace sync. Running the project locally, editing local files, and validating changes do not authorize any remote or public action.
+
+Every issue, push, pull request, release, publication, or marketplace/distribution sync requires separate explicit owner approval. Agents must not infer, batch, or bypass that approval.
