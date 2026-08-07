@@ -211,6 +211,102 @@ else
   fail "xdg config was not used when workspace config is absent"
 fi
 
+echo "-- Scoped per-key config resolution..."
+SCOPED_HOME="$(mktemp -d)"
+trap 'rm -rf "$SCOPED_HOME"' EXIT
+
+SCOPED_FLAT_WS="$SCOPED_HOME/flat-workspace"
+SCOPED_NESTED_WS="$SCOPED_HOME/nested-workspace"
+mkdir -p "$SCOPED_FLAT_WS/P300/spec/deep" "$SCOPED_NESTED_WS/Projects/P301/spec/deep"
+mkdir -p "$SCOPED_HOME/.config/spec-drive"
+mkdir -p "$SCOPED_FLAT_WS/P300/.git" "$SCOPED_NESTED_WS/Projects/P301/.git"
+
+cat >"$SCOPED_FLAT_WS/.spec-drive-config.json" <<EOF
+{"scope":"workspace","workspaceRoot":"$SCOPED_FLAT_WS","projectsPath":"."}
+EOF
+cat >"$SCOPED_FLAT_WS/P300/.spec-drive-config.json" <<'EOF'
+{"scope":"project","projectSlug":"P300","cli":"codex"}
+EOF
+cat >"$SCOPED_NESTED_WS/.spec-drive-config.json" <<EOF
+{"scope":"workspace","workspaceRoot":"$SCOPED_NESTED_WS","projectsPath":"Projects"}
+EOF
+cat >"$SCOPED_NESTED_WS/Projects/P301/.spec-drive-config.json" <<'EOF'
+{"scope":"project","projectSlug":"P301"}
+EOF
+cat >"$SCOPED_HOME/.config/spec-drive/config.json" <<EOF
+{"projectRoot":"$SCOPED_HOME/xdg-projects","cli":"claude-code"}
+EOF
+
+FLAT_CONTEXT="$(HOME="$SCOPED_HOME" XDG_CONFIG_HOME="$SCOPED_HOME/.config" bash -c ". hooks/scripts/resolve-config.sh && spec_drive_resolve_context \"$SCOPED_FLAT_WS/P300\"")"
+FLAT_NESTED_CONTEXT="$(HOME="$SCOPED_HOME" XDG_CONFIG_HOME="$SCOPED_HOME/.config" bash -c ". hooks/scripts/resolve-config.sh && spec_drive_resolve_context \"$SCOPED_FLAT_WS/P300/spec/deep\"")"
+if [ "$(echo "$FLAT_CONTEXT" | jq -r '.projectsContainer')" = "$SCOPED_FLAT_WS" ] \
+  && [ "$(echo "$FLAT_CONTEXT" | jq -r '.projectRoot')" = "$SCOPED_FLAT_WS/P300" ] \
+  && [ "$FLAT_CONTEXT" = "$FLAT_NESTED_CONTEXT" ]; then
+  ok "scoped flat workspace resolves identical context from project root and nested cwd"
+else
+  fail "scoped flat workspace context was not deterministic from nested cwd"
+fi
+
+NESTED_CONTEXT="$(HOME="$SCOPED_HOME" XDG_CONFIG_HOME="$SCOPED_HOME/.config" bash -c ". hooks/scripts/resolve-config.sh && spec_drive_resolve_context \"$SCOPED_NESTED_WS/Projects/P301/spec/deep\"")"
+if [ "$(echo "$NESTED_CONTEXT" | jq -r '.projectsContainer')" = "$SCOPED_NESTED_WS/Projects" ] \
+  && [ "$(echo "$NESTED_CONTEXT" | jq -r '.projectRoot')" = "$SCOPED_NESTED_WS/Projects/P301" ] \
+  && [ "$(echo "$NESTED_CONTEXT" | jq -r '.projectSlug')" = "P301" ]; then
+  ok "nested projectsPath resolves across independent project git roots"
+else
+  fail "nested projectsPath did not resolve expected project context"
+fi
+
+FLAT_CLI="$(HOME="$SCOPED_HOME" XDG_CONFIG_HOME="$SCOPED_HOME/.config" bash -c ". hooks/scripts/resolve-config.sh && spec_drive_resolve_value cli \"$SCOPED_FLAT_WS/P300/spec/deep\"")"
+NESTED_CLI="$(HOME="$SCOPED_HOME" XDG_CONFIG_HOME="$SCOPED_HOME/.config" bash -c ". hooks/scripts/resolve-config.sh && spec_drive_resolve_value cli \"$SCOPED_NESTED_WS/Projects/P301/spec/deep\"")"
+if [ "$FLAT_CLI" = "codex" ] && [ "$NESTED_CLI" = "claude-code" ]; then
+  ok "per-key resolution uses project overrides and lower-tier fallbacks independently"
+else
+  fail "per-key cli resolution did not preserve project override and XDG fallback"
+fi
+
+FLAT_CONTAINER="$(HOME="$SCOPED_HOME" XDG_CONFIG_HOME="$SCOPED_HOME/.config" bash -c ". hooks/scripts/resolve-config.sh && spec_drive_resolve_projects_container \"$SCOPED_FLAT_WS/P300/spec/deep\"")"
+FLAT_COMPAT="$(HOME="$SCOPED_HOME" XDG_CONFIG_HOME="$SCOPED_HOME/.config" bash -c ". hooks/scripts/resolve-config.sh && spec_drive_resolve_project_root \"$SCOPED_FLAT_WS/P300/spec/deep\"")"
+if [ "$FLAT_CONTAINER" = "$SCOPED_FLAT_WS" ] && [ "$FLAT_COMPAT" = "$FLAT_CONTAINER" ]; then
+  ok "projects-container accessor and legacy project-root wrapper agree"
+else
+  fail "projects-container accessor or compatibility wrapper returned the wrong path"
+fi
+
+MISSING_CONTEXT="$(HOME="$SCOPED_HOME" XDG_CONFIG_HOME="$SCOPED_HOME/missing-config" bash -c ". hooks/scripts/resolve-config.sh && spec_drive_resolve_context \"$SCOPED_HOME/no-config\"")"
+if [ "$(echo "$MISSING_CONTEXT" | jq -r '.projectsContainer')" = "$SCOPED_HOME/spec-drive-projects" ]; then
+  ok "missing config tiers fall back to the legacy home projects container"
+else
+  fail "missing config tiers did not use the legacy home projects container"
+fi
+
+ISO_A="$SCOPED_FLAT_WS/P300"
+ISO_B="$SCOPED_NESTED_WS/Projects/P301"
+ISO_A_ROOT="$(HOME="$SCOPED_HOME" XDG_CONFIG_HOME="$SCOPED_HOME/.config" bash -c ". hooks/scripts/resolve-config.sh && spec_drive_resolve_value projectRoot \"$ISO_A/spec/deep\"")"
+ISO_B_ROOT="$(HOME="$SCOPED_HOME" XDG_CONFIG_HOME="$SCOPED_HOME/.config" bash -c ". hooks/scripts/resolve-config.sh && spec_drive_resolve_value projectRoot \"$ISO_B/spec/deep\"")"
+if [ "$ISO_A_ROOT" = "$ISO_A" ] && [ "$ISO_B_ROOT" = "$ISO_B" ] && [ "$ISO_A_ROOT" != "$ISO_B_ROOT" ]; then
+  ok "different project sessions resolve isolated project identities"
+else
+  fail "different project sessions did not resolve isolated project identities"
+fi
+
+INVALID_PROJECT="$SCOPED_HOME/invalid-workspace/Projects/P302"
+mkdir -p "$INVALID_PROJECT/spec"
+cat >"$SCOPED_HOME/invalid-workspace/.spec-drive-config.json" <<EOF
+{"scope":"workspace","workspaceRoot":"$SCOPED_HOME/invalid-workspace","projectsPath":"Projects"}
+EOF
+cat >"$INVALID_PROJECT/.spec-drive-config.json" <<'EOF'
+{"scope":"project","projectSlug":"P302","projectRoot":"/tmp/forbidden"}
+EOF
+set +e
+INVALID_OUTPUT="$(HOME="$SCOPED_HOME" XDG_CONFIG_HOME="$SCOPED_HOME/.config" bash -c ". hooks/scripts/resolve-config.sh && spec_drive_resolve_context \"$INVALID_PROJECT/spec\"" 2>&1)"
+INVALID_STATUS=$?
+set -e
+if [ "$INVALID_STATUS" -ne 0 ] && echo "$INVALID_OUTPUT" | grep -q "$INVALID_PROJECT/.spec-drive-config.json"; then
+  ok "invalid-present scoped config fails with offending path"
+else
+  fail "invalid-present scoped config did not fail with offending path"
+fi
+
 echo "-- find -mmin portability (US2)..."
 # AC1: no find -mmin usage remains in stop-watcher.sh (exclude comment lines)
 if ! grep -vE '^\s*#' hooks/scripts/stop-watcher.sh | grep -qE 'find\s.*-mmin'; then
