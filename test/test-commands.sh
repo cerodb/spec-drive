@@ -326,6 +326,65 @@ else
   fail "research command missing fan-out post-validation step"
 fi
 
+echo "-- Checking new command scaffold delegation..."
+NEW_FILE="commands/new.md"
+if [ -f "$NEW_FILE" ]; then
+  if grep -q 'spec_drive_resolve_projects_container' "$NEW_FILE"; then
+    ok "new command resolves the shared projects container"
+  else
+    fail "new command missing shared projects container resolver"
+  fi
+
+  if grep -q 'hooks/scripts/create-project.sh' "$NEW_FILE"; then
+    ok "new command delegates project creation to create-project.sh"
+  else
+    fail "new command missing create-project.sh delegation"
+  fi
+
+  if grep -q 'Delegate to the researcher agent only after the scaffold exits `0`' "$NEW_FILE"; then
+    ok "new command documents researcher delegation only after scaffold success"
+  else
+    fail "new command missing scaffold-before-research contract"
+  fi
+
+  if grep -q 'Recovery: open the created project and run /spec-drive:research' "$NEW_FILE"; then
+    ok "new command documents recovery after post-scaffold research failure"
+  else
+    fail "new command missing post-scaffold research recovery guidance"
+  fi
+
+  if grep -q 'mkdir -p "\$PROJECT_ROOT/<name>/spec"' "$NEW_FILE"; then
+    fail "new command still contains legacy inline mkdir scaffold prose"
+  else
+    ok "new command no longer contains legacy inline mkdir scaffold prose"
+  fi
+
+  GOAL_PROMPT_LINE="$(grep -n 'No goal text provided\. What is the vision for this project\?' "$NEW_FILE" | head -n1 | cut -d: -f1)"
+  RESOLVER_LINE="$(grep -n 'spec_drive_resolve_projects_container' "$NEW_FILE" | head -n1 | cut -d: -f1)"
+  SCAFFOLD_LINE="$(grep -n 'hooks/scripts/create-project\.sh' "$NEW_FILE" | head -n1 | cut -d: -f1)"
+  RESEARCH_LINE="$(grep -n 'subagent_type: spec-drive:researcher' "$NEW_FILE" | head -n1 | cut -d: -f1)"
+
+  if [ -n "$GOAL_PROMPT_LINE" ] && [ -n "$RESOLVER_LINE" ] && [ "$GOAL_PROMPT_LINE" -lt "$RESOLVER_LINE" ]; then
+    ok "new command completes goal prompting before resolver execution"
+  else
+    fail "new command should prompt for missing goal before resolver execution"
+  fi
+
+  if [ -n "$RESOLVER_LINE" ] && [ -n "$SCAFFOLD_LINE" ] && [ "$RESOLVER_LINE" -lt "$SCAFFOLD_LINE" ]; then
+    ok "new command resolves container before invoking scaffold"
+  else
+    fail "new command should resolve container before invoking scaffold"
+  fi
+
+  if [ -n "$SCAFFOLD_LINE" ] && [ -n "$RESEARCH_LINE" ] && [ "$SCAFFOLD_LINE" -lt "$RESEARCH_LINE" ]; then
+    ok "new command delegates research after scaffold invocation"
+  else
+    fail "new command should delegate research after scaffold invocation"
+  fi
+else
+  fail "commands/new.md does not exist"
+fi
+
 echo ""
 echo "Commands checked: ${#COMMANDS[@]}"
 echo "Passed: $PASS | Failed: $FAIL"
