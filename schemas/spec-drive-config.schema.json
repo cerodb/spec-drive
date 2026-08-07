@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spec-drive/schemas/spec-drive-config.schema.json",
+  "title": ".spec-drive-config.json",
+  "description": "Scoped Spec-Drive configuration contract for workspace-local topology, portable project identity, and supported legacy unscoped compatibility.",
+  "oneOf": [
+    { "$ref": "#/$defs/projectConfig" },
+    { "$ref": "#/$defs/workspaceConfig" },
+    { "$ref": "#/$defs/legacyConfig" }
+  ],
+  "$defs": {
+    "safeProjectSlug": {
+      "type": "string",
+      "pattern": "^(?!\\.?\\.?$)[A-Za-z0-9_.-]+$",
+      "description": "Safe project directory slug. Must not be empty, '.' or '..', and must contain only ASCII letters, digits, underscore, dot, or hyphen."
+    },
+    "relativeProjectsPath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+",
+      "description": "Relative path from workspaceRoot to the projects container. Runtime enforcement must canonicalize this path under workspaceRoot and reject escapes."
+    },
+    "portableCliOverride": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Optional portable CLI routing override."
+    },
+    "projectConfig": {
+      "title": "Project Scope",
+      "description": "Portable project-root config. Carries project identity and portable overrides only; no workspace topology keys are allowed.",
+      "type": "object",
+      "required": ["scope", "projectSlug"],
+      "properties": {
+        "scope": {
+          "const": "project",
+          "description": "Marks this config as project scoped."
+        },
+        "projectSlug": {
+          "$ref": "#/$defs/safeProjectSlug"
+        },
+        "cli": {
+          "$ref": "#/$defs/portableCliOverride"
+        }
+      },
+      "additionalProperties": false
+    },
+    "workspaceConfig": {
+      "title": "Workspace Scope",
+      "description": "Node-local workspace config. Declares topology separately from project identity.",
+      "type": "object",
+      "required": ["scope", "workspaceRoot", "projectsPath"],
+      "properties": {
+        "scope": {
+          "const": "workspace",
+          "description": "Marks this config as workspace scoped."
+        },
+        "workspaceRoot": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Workspace root for this node. Absolute or config-relative values are resolved by runtime."
+        },
+        "projectsPath": {
+          "$ref": "#/$defs/relativeProjectsPath"
+        },
+        "cli": {
+          "$ref": "#/$defs/portableCliOverride"
+        }
+      },
+      "additionalProperties": false
+    },
+    "legacyConfig": {
+      "title": "Legacy Unscoped",
+      "description": "Legacy unscoped compatibility shape accepted for workspace or XDG fallback. This shape is supported for migration only and is never generated for new projects.",
+      "type": "object",
+      "properties": {
+        "projectRoot": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Legacy project container path. Relative values resolve from the config file directory."
+        },
+        "cli": {
+          "$ref": "#/$defs/portableCliOverride"
+        }
+      },
+      "additionalProperties": false,
+      "anyOf": [
+        { "required": ["projectRoot"] },
+        { "required": ["cli"] }
+      ],
+      "not": {
+        "required": ["scope"]
+      }
+    }
+  }
+}
