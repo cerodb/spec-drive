@@ -294,6 +294,9 @@ else
   fail "creation resolved from an existing project would nest under that project"
 fi
 
+# The start dir must exist: a missing dir makes the resolver fall back to PWD,
+# which would discover whatever workspace config sits above this repo.
+mkdir -p "$SCOPED_HOME/no-config"
 MISSING_CONTEXT="$(HOME="$SCOPED_HOME" XDG_CONFIG_HOME="$SCOPED_HOME/missing-config" bash -c ". hooks/scripts/resolve-config.sh && spec_drive_resolve_context \"$SCOPED_HOME/no-config\"")"
 if [ "$(echo "$MISSING_CONTEXT" | jq -r '.projectsContainer')" = "$SCOPED_HOME/spec-drive-projects" ]; then
   ok "missing config tiers fall back to the legacy home projects container"
