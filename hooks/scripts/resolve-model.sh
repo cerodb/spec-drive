@@ -64,14 +64,18 @@ detect_cli() {
         return 0
     fi
 
-    # 2. `cli` field in the resolved workspace/XDG spec-drive config.
+    # 2. `cli` field resolved per key from project/workspace/XDG config.
     if command -v jq >/dev/null 2>&1; then
-        local config_file configured_cli
-        if config_file="$(spec_drive_resolve_config_file "$PWD" 2>/dev/null)"; then
-            configured_cli="$(jq -r '.cli // empty' "$config_file" 2>/dev/null || true)"
+        local configured_cli resolve_status
+        if configured_cli="$(spec_drive_resolve_value cli "$PWD")"; then
             if [ -n "$configured_cli" ] && [ "$configured_cli" != "null" ]; then
                 printf '%s\n' "$configured_cli"
                 return 0
+            fi
+        else
+            resolve_status=$?
+            if [ "$resolve_status" -eq 3 ]; then
+                return "$resolve_status"
             fi
         fi
     fi

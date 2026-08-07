@@ -301,6 +301,134 @@ INLINE_PROFILE
   else
     fail "resolver should not emit stdout for inline prompt errors"
   fi
+
+  MODEL_HOME="$TMPDIR_SMOKE/model-resolution-home"
+  MODEL_WS="$TMPDIR_SMOKE/model-resolution-workspace"
+  MODEL_PROJECT="$MODEL_WS/Projects/P354b"
+  mkdir -p "$MODEL_HOME/.config/spec-drive" "$MODEL_PROJECT/spec"
+  cat > "$MODEL_WS/.spec-drive-config.json" <<EOF_MODEL_WORKSPACE
+{"scope":"workspace","workspaceRoot":"$MODEL_WS","projectsPath":"Projects","cli":"codex"}
+EOF_MODEL_WORKSPACE
+  cat > "$MODEL_PROJECT/.spec-drive-config.json" <<'EOF_MODEL_PROJECT'
+{"scope":"project","projectSlug":"P354b"}
+EOF_MODEL_PROJECT
+
+  PARTIAL_STDERR="$TMPDIR_SMOKE/resolve-model-partial-project.stderr"
+  set +e
+  PARTIAL_OUT="$(
+    unset CLAUDE_PLUGIN_ROOT CLAUDECODE CODEX_HOME CODEX_SANDBOX
+    cd "$MODEL_PROJECT/spec" && HOME="$MODEL_HOME" XDG_CONFIG_HOME="$MODEL_HOME/.config" bash "$RESOLVE_MODEL_SCRIPT" light 2>"$PARTIAL_STDERR"
+  )"
+  PARTIAL_EXIT=$?
+  set -e
+
+  if [ "$PARTIAL_EXIT" -eq 0 ] && printf '%s\n' "$PARTIAL_OUT" | grep -q '^cmd=codex exec -m gpt-5.4-mini -s workspace-write -- < {promptfile}$'; then
+    ok "partial project config inherits workspace cli selection"
+  else
+    fail "partial project config should inherit workspace cli selection"
+  fi
+
+  if [ ! -s "$PARTIAL_STDERR" ]; then
+    ok "partial project inheritance keeps stderr clean"
+  else
+    fail "partial project inheritance should not write stderr"
+  fi
+
+  REPEAT_STDERR="$TMPDIR_SMOKE/resolve-model-repeat.stderr"
+  REPEAT_FIRST="$PARTIAL_OUT"
+  REPEAT_MATCH=true
+  i=1
+  while [ "$i" -le 20 ]; do
+    set +e
+    REPEAT_OUT="$(
+      unset CLAUDE_PLUGIN_ROOT CLAUDECODE CODEX_HOME CODEX_SANDBOX
+      cd "$MODEL_PROJECT/spec" && HOME="$MODEL_HOME" XDG_CONFIG_HOME="$MODEL_HOME/.config" bash "$RESOLVE_MODEL_SCRIPT" light 2>>"$REPEAT_STDERR"
+    )"
+    REPEAT_EXIT=$?
+    set -e
+    if [ "$REPEAT_EXIT" -ne 0 ] || [ "$REPEAT_OUT" != "$REPEAT_FIRST" ]; then
+      REPEAT_MATCH=false
+      break
+    fi
+    i=$((i + 1))
+  done
+
+  if [ "$REPEAT_MATCH" = "true" ]; then
+    ok "repeated model resolution is identical"
+  else
+    fail "repeated model resolution should be identical"
+  fi
+
+  if [ ! -s "$REPEAT_STDERR" ]; then
+    ok "repeated model resolution keeps stderr clean"
+  else
+    fail "repeated model resolution should not write stderr"
+  fi
+
+  LEGACY_XDG_HOME="$TMPDIR_SMOKE/model-legacy-xdg-home"
+  LEGACY_CWD="$TMPDIR_SMOKE/model-legacy-xdg-cwd"
+  mkdir -p "$LEGACY_XDG_HOME/.config/spec-drive" "$LEGACY_CWD" "$TMPDIR_SMOKE/legacy-projects"
+  cat > "$LEGACY_XDG_HOME/.config/spec-drive/config.json" <<EOF_LEGACY_XDG_CONFIG
+{"projectRoot":"$TMPDIR_SMOKE/legacy-projects","cli":"claude-code"}
+EOF_LEGACY_XDG_CONFIG
+
+  LEGACY_XDG_STDERR="$TMPDIR_SMOKE/resolve-model-legacy-xdg.stderr"
+  set +e
+  LEGACY_XDG_OUT="$(
+    unset CLAUDE_PLUGIN_ROOT CLAUDECODE CODEX_HOME CODEX_SANDBOX
+    cd "$LEGACY_CWD" && HOME="$LEGACY_XDG_HOME" XDG_CONFIG_HOME="$LEGACY_XDG_HOME/.config" bash "$RESOLVE_MODEL_SCRIPT" light 2>"$LEGACY_XDG_STDERR"
+  )"
+  LEGACY_XDG_EXIT=$?
+  set -e
+
+  if [ "$LEGACY_XDG_EXIT" -eq 0 ] && printf '%s\n' "$LEGACY_XDG_OUT" | grep -q '^model=haiku$'; then
+    ok "legacy XDG config cli selection is preserved"
+  else
+    fail "legacy XDG config should select claude-code profile"
+  fi
+
+  if [ ! -s "$LEGACY_XDG_STDERR" ]; then
+    ok "legacy XDG cli detection keeps stderr clean"
+  else
+    fail "legacy XDG cli detection should not write stderr"
+  fi
+
+  INVALID_MODEL_WS="$TMPDIR_SMOKE/model-invalid-workspace"
+  INVALID_PROJECT_SLUG="P999-invalid"
+  mkdir -p "$INVALID_MODEL_WS/Projects/$INVALID_PROJECT_SLUG/spec" "$MODEL_HOME/.config/spec-drive"
+  cat > "$INVALID_MODEL_WS/.spec-drive-config.json" <<EOF_INVALID_MODEL_WORKSPACE
+{"scope":"workspace","workspaceRoot":"$INVALID_MODEL_WS","projectsPath":"Projects","cli":"codex"}
+EOF_INVALID_MODEL_WORKSPACE
+  cat > "$INVALID_MODEL_WS/Projects/$INVALID_PROJECT_SLUG/.spec-drive-config.json" <<EOF_INVALID_MODEL_PROJECT
+{"scope":"project","projectSlug":"$INVALID_PROJECT_SLUG","workspaceRoot":"/tmp/not-allowed"}
+EOF_INVALID_MODEL_PROJECT
+
+  INVALID_MODEL_STDERR="$TMPDIR_SMOKE/resolve-model-invalid-present.stderr"
+  set +e
+  INVALID_MODEL_OUT="$(
+    unset CLAUDE_PLUGIN_ROOT CLAUDECODE CODEX_HOME CODEX_SANDBOX
+    cd "$INVALID_MODEL_WS/Projects/$INVALID_PROJECT_SLUG/spec" && HOME="$MODEL_HOME" XDG_CONFIG_HOME="$MODEL_HOME/.config" bash "$RESOLVE_MODEL_SCRIPT" light 2>"$INVALID_MODEL_STDERR"
+  )"
+  INVALID_MODEL_EXIT=$?
+  set -e
+
+  if [ "$INVALID_MODEL_EXIT" -eq 3 ]; then
+    ok "invalid-present config exits 3 during cli detection"
+  else
+    fail "invalid-present config should exit 3 during cli detection (got $INVALID_MODEL_EXIT)"
+  fi
+
+  if grep -q "$INVALID_MODEL_WS/Projects/$INVALID_PROJECT_SLUG/.spec-drive-config.json" "$INVALID_MODEL_STDERR"; then
+    ok "invalid-present cli detection reports offending config path"
+  else
+    fail "invalid-present cli detection should report offending config path"
+  fi
+
+  if [ -z "$INVALID_MODEL_OUT" ]; then
+    ok "invalid-present cli detection emits no stdout"
+  else
+    fail "invalid-present cli detection should emit no stdout"
+  fi
 fi
 
 # Coordinator scoring function smoke tests
