@@ -148,7 +148,7 @@ if [ -f "$SWITCH_FILE" ]; then
     fail "switch.md missing allowed-tools frontmatter key"
   fi
 
-  if grep -q '~/.spec-drive-active.json' "$SWITCH_FILE"; then
+  if grep -Fq '~'"/.spec-drive-active.json" "$SWITCH_FILE"; then
     ok "switch.md references ~/.spec-drive-active.json"
   else
     fail "switch.md does not reference ~/.spec-drive-active.json"

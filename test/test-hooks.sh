@@ -594,7 +594,6 @@ fi
   . hooks/scripts/resolve-config.sh
   # Define is_safe_spec_path inline for testing (always returns 0 for our spec path)
   is_safe_spec_path() { [ "$1" = "$SPEC_PATH" ]; }
-  PROJECT_ROOT_REAL="$CLEANUP_TMP/sd-projects"
   _cleanup_old_progress_files() {
     local spec_path="$1"
     local max_age_seconds=3600

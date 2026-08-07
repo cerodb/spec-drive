@@ -34,7 +34,7 @@ spec_drive_expand_path() {
     local raw="$1"
     case "$raw" in
         "~") printf '%s\n' "$HOME" ;;
-        "~/"*) printf '%s/%s\n' "$HOME" "${raw#~/}" ;;
+        \~/*) printf '%s/%s\n' "$HOME" "${raw#\~/}" ;;
         *) printf '%s\n' "$raw" ;;
     esac
 }
@@ -320,7 +320,7 @@ spec_drive_resolve_context() {
     local project_config="" workspace_config="" xdg_config=""
     local workspace_root="" projects_path="" projects_container=""
     local project_slug="" project_root="" cli=""
-    local raw config_dir project_config_root
+    local raw project_config_root
 
     spec_drive_validate_discovered_configs "$start_dir" || return $?
 
