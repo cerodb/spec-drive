@@ -92,6 +92,7 @@ SPEC_PATH="$PROJECT_PATH/spec"
 
 - Set `mode` to `"auto"` if `--auto` flag was present, otherwise `"normal"`
 - Set `researchDepth` to `"deep"` if `--deep` flag was present, otherwise `"standard"`
+- Persist the selected depth in the scaffolded state as `"researchDepth": "<deep|standard>"`.
 - The scaffold creates the project root, root `.spec-drive-config.json`, `spec/idea.md`, `spec/.progress.md`, `spec/.spec-drive-state.json`, and initializes the project Git repository.
 
 Handle scaffold exits as follows:
