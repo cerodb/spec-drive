@@ -184,6 +184,25 @@ fi
 
 assert_no_staging "$PROJECTS"
 
+echo "-- Stdout failure before publish..."
+STDOUT_FAIL_SLUG="p902-stdout-fail"
+set +e
+bash hooks/scripts/create-project.sh \
+  --projects-container "$PROJECTS" \
+  --project-slug "$STDOUT_FAIL_SLUG" \
+  --goal "Do not publish if stdout is unavailable." \
+  --mode normal \
+  --research-depth standard \
+  --created-at "$CREATED_AT" >/dev/full 2>"$TMP_REGISTRAR/stdout-fail.err"
+STDOUT_FAIL_STATUS=$?
+set -e
+if [ "$STDOUT_FAIL_STATUS" -ne 0 ] && [ ! -e "$PROJECTS/$STDOUT_FAIL_SLUG" ]; then
+  ok "stdout failure returns non-zero before destination publish"
+else
+  fail "stdout failure produced status $STDOUT_FAIL_STATUS with destination existence: $([ -e "$PROJECTS/$STDOUT_FAIL_SLUG" ] && printf yes || printf no)"
+fi
+assert_no_staging "$PROJECTS"
+
 echo "-- Existing destination protection..."
 CONFIG_BEFORE="$TMP_REGISTRAR/config.before"
 IDEA_BEFORE="$TMP_REGISTRAR/idea.before"

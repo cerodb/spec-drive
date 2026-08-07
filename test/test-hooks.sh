@@ -307,6 +307,116 @@ else
   fail "invalid-present scoped config did not fail with offending path"
 fi
 
+INVALID_SLUG_PROJECT="$SCOPED_HOME/invalid-slug-workspace/Projects/bad slug"
+mkdir -p "$INVALID_SLUG_PROJECT/spec"
+cat >"$SCOPED_HOME/invalid-slug-workspace/.spec-drive-config.json" <<EOF
+{"scope":"workspace","workspaceRoot":"$SCOPED_HOME/invalid-slug-workspace","projectsPath":"Projects"}
+EOF
+cat >"$INVALID_SLUG_PROJECT/.spec-drive-config.json" <<'EOF'
+{"scope":"project","projectSlug":"bad slug"}
+EOF
+set +e
+INVALID_SLUG_OUTPUT="$(HOME="$SCOPED_HOME" XDG_CONFIG_HOME="$SCOPED_HOME/.config" bash -c ". hooks/scripts/resolve-config.sh && spec_drive_resolve_context \"$INVALID_SLUG_PROJECT/spec\"" 2>&1)"
+INVALID_SLUG_STATUS=$?
+set -e
+if [ "$INVALID_SLUG_STATUS" -eq 3 ] && echo "$INVALID_SLUG_OUTPUT" | grep -q "$INVALID_SLUG_PROJECT/.spec-drive-config.json" && echo "$INVALID_SLUG_OUTPUT" | grep -q 'projectSlug'; then
+  ok "projectSlug with whitespace fails with exit 3 and offending config path"
+else
+  fail "projectSlug with whitespace did not fail with controlled exit 3 and path"
+fi
+
+UNSAFE_SLUG_PROJECT="$SCOPED_HOME/unsafe-slug-workspace/Projects/bad@slug"
+mkdir -p "$UNSAFE_SLUG_PROJECT/spec"
+cat >"$SCOPED_HOME/unsafe-slug-workspace/.spec-drive-config.json" <<EOF
+{"scope":"workspace","workspaceRoot":"$SCOPED_HOME/unsafe-slug-workspace","projectsPath":"Projects"}
+EOF
+cat >"$UNSAFE_SLUG_PROJECT/.spec-drive-config.json" <<'EOF'
+{"scope":"project","projectSlug":"bad@slug"}
+EOF
+set +e
+UNSAFE_SLUG_OUTPUT="$(HOME="$SCOPED_HOME" XDG_CONFIG_HOME="$SCOPED_HOME/.config" bash -c ". hooks/scripts/resolve-config.sh && spec_drive_resolve_context \"$UNSAFE_SLUG_PROJECT/spec\"" 2>&1)"
+UNSAFE_SLUG_STATUS=$?
+set -e
+if [ "$UNSAFE_SLUG_STATUS" -eq 3 ] && echo "$UNSAFE_SLUG_OUTPUT" | grep -q "$UNSAFE_SLUG_PROJECT/.spec-drive-config.json" && echo "$UNSAFE_SLUG_OUTPUT" | grep -q 'projectSlug'; then
+  ok "projectSlug with unsafe characters fails with exit 3 and offending config path"
+else
+  fail "projectSlug with unsafe characters did not fail with controlled exit 3 and path"
+fi
+
+NUMERIC_SLUG_PROJECT="$SCOPED_HOME/numeric-slug-workspace/Projects/123"
+mkdir -p "$NUMERIC_SLUG_PROJECT/spec"
+cat >"$SCOPED_HOME/numeric-slug-workspace/.spec-drive-config.json" <<EOF
+{"scope":"workspace","workspaceRoot":"$SCOPED_HOME/numeric-slug-workspace","projectsPath":"Projects"}
+EOF
+cat >"$NUMERIC_SLUG_PROJECT/.spec-drive-config.json" <<'EOF'
+{"scope":"project","projectSlug":123}
+EOF
+set +e
+NUMERIC_SLUG_OUTPUT="$(HOME="$SCOPED_HOME" XDG_CONFIG_HOME="$SCOPED_HOME/.config" bash -c ". hooks/scripts/resolve-config.sh && spec_drive_resolve_context \"$NUMERIC_SLUG_PROJECT/spec\"" 2>&1)"
+NUMERIC_SLUG_STATUS=$?
+set -e
+if [ "$NUMERIC_SLUG_STATUS" -eq 3 ] \
+  && echo "$NUMERIC_SLUG_OUTPUT" | grep -q "Invalid Spec-Drive config: $NUMERIC_SLUG_PROJECT/.spec-drive-config.json:" \
+  && ! echo "$NUMERIC_SLUG_OUTPUT" | grep -qi 'jq:'; then
+  ok "numeric projectSlug fails with controlled exit 3 diagnostic"
+else
+  fail "numeric projectSlug did not fail with controlled exit 3 diagnostic"
+fi
+
+BOOLEAN_SLUG_PROJECT="$SCOPED_HOME/boolean-slug-workspace/Projects/true"
+mkdir -p "$BOOLEAN_SLUG_PROJECT/spec"
+cat >"$SCOPED_HOME/boolean-slug-workspace/.spec-drive-config.json" <<EOF
+{"scope":"workspace","workspaceRoot":"$SCOPED_HOME/boolean-slug-workspace","projectsPath":"Projects"}
+EOF
+cat >"$BOOLEAN_SLUG_PROJECT/.spec-drive-config.json" <<'EOF'
+{"scope":"project","projectSlug":true}
+EOF
+set +e
+BOOLEAN_SLUG_OUTPUT="$(HOME="$SCOPED_HOME" XDG_CONFIG_HOME="$SCOPED_HOME/.config" bash -c ". hooks/scripts/resolve-config.sh && spec_drive_resolve_context \"$BOOLEAN_SLUG_PROJECT/spec\"" 2>&1)"
+BOOLEAN_SLUG_STATUS=$?
+set -e
+if [ "$BOOLEAN_SLUG_STATUS" -eq 3 ] \
+  && echo "$BOOLEAN_SLUG_OUTPUT" | grep -q "Invalid Spec-Drive config: $BOOLEAN_SLUG_PROJECT/.spec-drive-config.json:" \
+  && ! echo "$BOOLEAN_SLUG_OUTPUT" | grep -qi 'jq:'; then
+  ok "boolean projectSlug fails with controlled exit 3 diagnostic"
+else
+  fail "boolean projectSlug did not fail with controlled exit 3 diagnostic"
+fi
+
+BOUNDARY_WS="$SCOPED_HOME/boundary-workspace"
+mkdir -p "$BOUNDARY_WS/Projects/P303/spec"
+cat >"$SCOPED_HOME/.spec-drive-config.json" <<'EOF'
+{"scope":"workspace","workspaceRoot":"/tmp"
+EOF
+cat >"$BOUNDARY_WS/.spec-drive-config.json" <<EOF
+{"scope":"workspace","workspaceRoot":"$BOUNDARY_WS","projectsPath":"Projects"}
+EOF
+cat >"$BOUNDARY_WS/Projects/P303/.spec-drive-config.json" <<'EOF'
+{"scope":"project","projectSlug":"P303"}
+EOF
+BOUNDARY_CONTEXT="$(HOME="$SCOPED_HOME" XDG_CONFIG_HOME="$SCOPED_HOME/.config" bash -c ". hooks/scripts/resolve-config.sh && spec_drive_resolve_context \"$BOUNDARY_WS/Projects/P303/spec\"")"
+if [ "$(echo "$BOUNDARY_CONTEXT" | jq -r '.projectRoot')" = "$BOUNDARY_WS/Projects/P303" ] \
+  && [ "$(echo "$BOUNDARY_CONTEXT" | jq -r '.workspaceConfig')" = "$BOUNDARY_WS/.spec-drive-config.json" ]; then
+  ok "resolver stops above nearest valid workspace boundary"
+else
+  fail "resolver was contaminated by invalid config above workspace boundary"
+fi
+
+NON_OBJECT_WS="$SCOPED_HOME/non-object-workspace"
+mkdir -p "$NON_OBJECT_WS"
+cat >"$NON_OBJECT_WS/.spec-drive-config.json" <<'EOF'
+[]
+EOF
+set +e
+NON_OBJECT_OUTPUT="$(HOME="$SCOPED_HOME" XDG_CONFIG_HOME="$SCOPED_HOME/.config" bash -c ". hooks/scripts/resolve-config.sh && spec_drive_resolve_context \"$NON_OBJECT_WS\"" 2>&1)"
+NON_OBJECT_STATUS=$?
+set -e
+if [ "$NON_OBJECT_STATUS" -eq 3 ] && echo "$NON_OBJECT_OUTPUT" | grep -q "$NON_OBJECT_WS/.spec-drive-config.json" && echo "$NON_OBJECT_OUTPUT" | grep -q 'config root must be a JSON object' && ! echo "$NON_OBJECT_OUTPUT" | grep -qi 'jq:'; then
+  ok "non-object config root fails with controlled exit 3 diagnostic"
+else
+  fail "non-object config root did not fail with controlled Spec-Drive diagnostic"
+fi
+
 echo "-- find -mmin portability (US2)..."
 # AC1: no find -mmin usage remains in stop-watcher.sh (exclude comment lines)
 if ! grep -vE '^\s*#' hooks/scripts/stop-watcher.sh | grep -qE 'find\s.*-mmin'; then

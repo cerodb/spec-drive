@@ -243,7 +243,7 @@ if [ -e "$destination" ]; then
   exit 2
 fi
 
+printf '%s\n' "$destination" || die_operational "could not write published project path"
 mv "$staging" "$destination" || die_operational "could not publish project"
 staging=""
 trap - EXIT HUP INT TERM
-printf '%s\n' "$destination"

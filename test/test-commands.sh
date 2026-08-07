@@ -381,6 +381,26 @@ if [ -f "$NEW_FILE" ]; then
   else
     fail "new command should delegate research after scaffold invocation"
   fi
+
+  STATUS_LINE="$(grep -n 'CREATE_PROJECT_STATUS=\$?' "$NEW_FILE" | head -n1 | cut -d: -f1)"
+  SET_PLUS_E_LINE="$(grep -n 'set +e' "$NEW_FILE" | head -n1 | cut -d: -f1)"
+  SET_MINUS_E_LINE="$(grep -n 'set -e' "$NEW_FILE" | head -n1 | cut -d: -f1)"
+  EXIT2_LINE="$(grep -n '\[ "\$CREATE_PROJECT_STATUS" -eq 2 \]' "$NEW_FILE" | head -n1 | cut -d: -f1)"
+  NONZERO_LINE="$(grep -n '\[ "\$CREATE_PROJECT_STATUS" -ne 0 \]' "$NEW_FILE" | head -n1 | cut -d: -f1)"
+  SPEC_PATH_LINE="$(grep -n 'SPEC_PATH="\$PROJECT_PATH/spec"' "$NEW_FILE" | head -n1 | cut -d: -f1)"
+
+  if [ -n "$SET_PLUS_E_LINE" ] && [ -n "$STATUS_LINE" ] && [ -n "$SET_MINUS_E_LINE" ] && [ -n "$EXIT2_LINE" ] && [ -n "$NONZERO_LINE" ] && [ -n "$SPEC_PATH_LINE" ] \
+    && [ "$SET_PLUS_E_LINE" -lt "$SCAFFOLD_LINE" ] \
+    && [ "$SCAFFOLD_LINE" -lt "$STATUS_LINE" ] \
+    && [ "$STATUS_LINE" -lt "$SET_MINUS_E_LINE" ] \
+    && [ "$SET_MINUS_E_LINE" -lt "$EXIT2_LINE" ] \
+    && [ "$STATUS_LINE" -lt "$EXIT2_LINE" ] \
+    && [ "$EXIT2_LINE" -lt "$NONZERO_LINE" ] \
+    && [ "$NONZERO_LINE" -lt "$SPEC_PATH_LINE" ]; then
+    ok "new command captures scaffold status and branches before deriving SPEC_PATH"
+  else
+    fail "new command must capture scaffold status, distinguish exit 2, and branch before SPEC_PATH"
+  fi
 else
   fail "commands/new.md does not exist"
 fi

@@ -78,18 +78,32 @@ spec_drive_validate_config_file() {
         spec_drive_config_error "$path" "invalid JSON"
         return 3
     fi
+    if ! jq -e 'type == "object"' "$path" >/dev/null 2>&1; then
+        spec_drive_config_error "$path" "config root must be a JSON object"
+        return 3
+    fi
 
     scope="$(jq -r '.scope // empty' "$path")"
     case "$scope" in
         project)
-            project_slug="$(jq -r '.projectSlug // empty' "$path")"
-            if [ -z "$project_slug" ]; then
+            if ! spec_drive_json_has_key "$path" "projectSlug"; then
                 spec_drive_config_error "$path" "scope project requires projectSlug"
                 return 3
             fi
+            if ! jq -e '.projectSlug | type == "string"' "$path" >/dev/null 2>&1; then
+                spec_drive_config_error "$path" "projectSlug must be a JSON string"
+                return 3
+            fi
+            project_slug="$(jq -r '.projectSlug // empty' "$path")"
             case "$project_slug" in
                 "."|".."|*/*|*\\*|"")
                     spec_drive_config_error "$path" "projectSlug must be a safe path segment"
+                    return 3
+                    ;;
+            esac
+            case "$project_slug" in
+                *[!A-Za-z0-9_.-]*)
+                    spec_drive_config_error "$path" "projectSlug must match ^[a-zA-Z0-9_.-]+$"
                     return 3
                     ;;
             esac
@@ -147,6 +161,11 @@ spec_drive_validate_config_file() {
     return 0
 }
 
+spec_drive_config_scope() {
+    local path="$1"
+    jq -r '.scope // empty' "$path" 2>/dev/null
+}
+
 spec_drive_start_dir() {
     local start_dir="${1:-$PWD}"
     if [ -z "$start_dir" ]; then
@@ -167,13 +186,17 @@ spec_drive_xdg_config_path() {
 
 spec_drive_validate_discovered_configs() {
     local start_dir="$1"
-    local dir candidate xdg_config
+    local dir candidate xdg_config scope
 
     dir="$(spec_drive_start_dir "$start_dir")"
     while :; do
         candidate="$dir/.spec-drive-config.json"
         if [ -f "$candidate" ]; then
             spec_drive_validate_config_file "$candidate" || return $?
+            scope="$(spec_drive_config_scope "$candidate")"
+            if [ "$scope" = "workspace" ] || [ -z "$scope" ]; then
+                break
+            fi
         fi
         [ "$dir" = "/" ] && break
         dir="$(dirname "$dir")"
@@ -204,6 +227,9 @@ spec_drive_find_scoped_config() {
             if [ "$wanted_scope" = "project" ] && [ "$scope" = "project" ]; then
                 printf '%s\n' "$candidate"
                 return 0
+            fi
+            if [ "$scope" = "workspace" ] || [ -z "$scope" ]; then
+                break
             fi
         fi
         [ "$dir" = "/" ] && break

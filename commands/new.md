@@ -66,12 +66,27 @@ If the resolver exits non-zero, stop and surface its stderr unchanged.
 Invoke the executable scaffold and capture the published project path from stdout:
 
 ```bash
+PROJECT_PATH=""
+CREATE_PROJECT_STDERR="$(mktemp)"
+set +e
 PROJECT_PATH="$(bash hooks/scripts/create-project.sh \
   --projects-container "$PROJECTS_CONTAINER" \
   --project-slug "$name" \
   --goal "$goal" \
   --mode "$mode" \
-  --research-depth "$researchDepth")"
+  --research-depth "$researchDepth" 2>"$CREATE_PROJECT_STDERR")"
+CREATE_PROJECT_STATUS=$?
+set -e
+if [ "$CREATE_PROJECT_STATUS" -eq 2 ]; then
+  cat "$CREATE_PROJECT_STDERR" >&2
+  rm -f "$CREATE_PROJECT_STDERR"
+  exit 2
+elif [ "$CREATE_PROJECT_STATUS" -ne 0 ]; then
+  cat "$CREATE_PROJECT_STDERR" >&2
+  rm -f "$CREATE_PROJECT_STDERR"
+  exit "$CREATE_PROJECT_STATUS"
+fi
+rm -f "$CREATE_PROJECT_STDERR"
 SPEC_PATH="$PROJECT_PATH/spec"
 ```
 
