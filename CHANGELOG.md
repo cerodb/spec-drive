@@ -1,5 +1,18 @@
 # Changelog
 
+## v1.4.0 — 2026-08-07
+
+Scoped project registration and portable workspace topology.
+
+### Highlights
+
+- Added explicit project/workspace configuration scopes with per-key `project > workspace > legacy XDG` resolution and strict invalid-present failures.
+- Added an executable atomic project scaffold used by `/spec-drive:new`, with safe slugs, deterministic core artifacts, Git initialization, rollback, and existing-destination protection.
+- Defined canonical project destinations: `spec/` for lifecycle canon, `audit/` for project evidence and diagnostics, `input/` for received material, and `output/` for non-spec deliverables.
+- Preserved legacy unscoped configuration and heterogeneous flat or nested workspace layouts.
+- Expanded regression coverage for rollback, concurrent project resolution, Linux/macOS portability, synthetic fixtures, and disclosure scanning.
+- Kept all remote publication and marketplace/distribution synchronization behind separate explicit owner approval.
+
 ## v1.3.4 — 2026-07-20
 
 - Internal test-tooling cleanup so a consistency check no longer flags its own configuration. No functional change to the plugin.
