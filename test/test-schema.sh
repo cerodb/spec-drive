@@ -316,6 +316,9 @@ EOF
 cat >"$TMP_CONFIG_DIR/project-invalid-slug.json" <<'EOF'
 {"scope":"project","projectSlug":"bad slug"}
 EOF
+cat >"$TMP_CONFIG_DIR/project-invalid-unknown.json" <<'EOF'
+{"scope":"project","projectSlug":"safe-slug","unexpected":true}
+EOF
 cat >"$TMP_CONFIG_DIR/project-output-portable.json" <<'EOF'
 {"scope":"project","projectSlug":"portable-slug"}
 EOF
@@ -327,6 +330,12 @@ cat >"$TMP_CONFIG_DIR/legacy-invalid-empty-root.json" <<'EOF'
 EOF
 cat >"$TMP_CONFIG_DIR/legacy-invalid-scope.json" <<'EOF'
 {"scope":"legacy","projectRoot":"./spec-drive-projects"}
+EOF
+cat >"$TMP_CONFIG_DIR/legacy-invalid-empty.json" <<'EOF'
+{}
+EOF
+cat >"$TMP_CONFIG_DIR/legacy-invalid-cli-type.json" <<'EOF'
+{"cli":42}
 EOF
 
 cat >"$TMP_CONFIG_DIR/workspace-valid.json" <<EOF
@@ -340,6 +349,12 @@ cat >"$TMP_CONFIG_DIR/workspace-invalid-absolute.json" <<EOF
 EOF
 cat >"$TMP_CONFIG_DIR/workspace-invalid-escape.json" <<EOF
 {"scope":"workspace","workspaceRoot":"$WORKSPACE_ROOT","projectsPath":"../escape"}
+EOF
+cat >"$TMP_CONFIG_DIR/workspace-invalid-root-type.json" <<'EOF'
+{"scope":"workspace","workspaceRoot":42,"projectsPath":"Projects"}
+EOF
+cat >"$TMP_CONFIG_DIR/workspace-invalid-dotdot-segment.json" <<EOF
+{"scope":"workspace","workspaceRoot":"$WORKSPACE_ROOT","projectsPath":"Projects/../elsewhere"}
 EOF
 cat >"$TMP_CONFIG_DIR/workspace-valid-nested.json" <<EOF
 {"scope":"workspace","workspaceRoot":"$WORKSPACE_ROOT","projectsPath":"groups/Projects"}
@@ -377,10 +392,15 @@ assert_runtime_config_status "$TMP_CONFIG_DIR/workspace-valid-nested.json" 0 "ru
 assert_runtime_config_status "$TMP_CONFIG_DIR/legacy-valid.json" 0 "runtime accepts supported legacy unscoped config"
 assert_runtime_config_status "$TMP_CONFIG_DIR/project-invalid-topology.json" 3 "runtime rejects project-scope topology keys"
 assert_runtime_config_status "$TMP_CONFIG_DIR/project-invalid-slug.json" 3 "runtime rejects unsafe projectSlug values"
+assert_runtime_config_status "$TMP_CONFIG_DIR/project-invalid-unknown.json" 3 "runtime rejects undeclared project fields"
 assert_runtime_config_status "$TMP_CONFIG_DIR/workspace-invalid-absolute.json" 3 "runtime rejects absolute projectsPath values"
 assert_runtime_config_status "$TMP_CONFIG_DIR/workspace-invalid-escape.json" 3 "runtime rejects projectsPath values that escape workspaceRoot"
+assert_runtime_config_status "$TMP_CONFIG_DIR/workspace-invalid-root-type.json" 3 "runtime rejects non-string workspaceRoot values"
+assert_runtime_config_status "$TMP_CONFIG_DIR/workspace-invalid-dotdot-segment.json" 3 "runtime rejects lexical '..' projectsPath segments"
 assert_runtime_config_status "$TMP_CONFIG_DIR/legacy-invalid-empty-root.json" 3 "runtime rejects empty legacy projectRoot"
 assert_runtime_config_status "$TMP_CONFIG_DIR/legacy-invalid-scope.json" 3 "runtime rejects unsupported scope values"
+assert_runtime_config_status "$TMP_CONFIG_DIR/legacy-invalid-empty.json" 3 "runtime rejects empty legacy config"
+assert_runtime_config_status "$TMP_CONFIG_DIR/legacy-invalid-cli-type.json" 3 "runtime rejects non-string legacy cli values"
 
 echo ""
 echo "Passed: $PASS | Failed: $FAIL"

@@ -86,6 +86,10 @@ spec_drive_validate_config_file() {
     scope="$(jq -r '.scope // empty' "$path")"
     case "$scope" in
         project)
+            if ! jq -e '([keys[]] - ["scope", "projectSlug", "cli"] | length) == 0' "$path" >/dev/null 2>&1; then
+                spec_drive_config_error "$path" "scope project contains unsupported fields"
+                return 3
+            fi
             if ! spec_drive_json_has_key "$path" "projectSlug"; then
                 spec_drive_config_error "$path" "scope project requires projectSlug"
                 return 3
@@ -113,19 +117,23 @@ spec_drive_validate_config_file() {
             fi
             ;;
         workspace)
+            if ! jq -e '([keys[]] - ["scope", "workspaceRoot", "projectsPath", "cli"] | length) == 0' "$path" >/dev/null 2>&1; then
+                spec_drive_config_error "$path" "scope workspace contains unsupported fields"
+                return 3
+            fi
+            if ! jq -e '.workspaceRoot | type == "string" and length > 0' "$path" >/dev/null 2>&1; then
+                spec_drive_config_error "$path" "workspaceRoot must be a non-empty JSON string"
+                return 3
+            fi
+            if ! jq -e '.projectsPath | type == "string" and length > 0' "$path" >/dev/null 2>&1; then
+                spec_drive_config_error "$path" "projectsPath must be a non-empty JSON string"
+                return 3
+            fi
             workspace_root="$(jq -r '.workspaceRoot // empty' "$path")"
             projects_path="$(jq -r '.projectsPath // empty' "$path")"
-            if [ -z "$workspace_root" ]; then
-                spec_drive_config_error "$path" "scope workspace requires workspaceRoot"
-                return 3
-            fi
-            if [ -z "$projects_path" ]; then
-                spec_drive_config_error "$path" "scope workspace requires projectsPath"
-                return 3
-            fi
             case "$projects_path" in
-                /*)
-                    spec_drive_config_error "$path" "projectsPath must be relative"
+                /*|..|../*|*/../*|*/..)
+                    spec_drive_config_error "$path" "projectsPath must be relative and contain no '..' path segment"
                     return 3
                     ;;
             esac
@@ -144,10 +152,17 @@ spec_drive_validate_config_file() {
             esac
             ;;
         "")
+            if ! jq -e '([keys[]] - ["projectRoot", "cli"] | length) == 0' "$path" >/dev/null 2>&1; then
+                spec_drive_config_error "$path" "legacy config contains unsupported fields"
+                return 3
+            fi
+            if ! jq -e 'has("projectRoot") or has("cli")' "$path" >/dev/null 2>&1; then
+                spec_drive_config_error "$path" "legacy config requires projectRoot or cli"
+                return 3
+            fi
             if spec_drive_json_has_key "$path" "projectRoot"; then
-                project_root="$(jq -r '.projectRoot // empty' "$path")"
-                if [ -z "$project_root" ]; then
-                    spec_drive_config_error "$path" "legacy projectRoot cannot be empty"
+                if ! jq -e '.projectRoot | type == "string" and length > 0' "$path" >/dev/null 2>&1; then
+                    spec_drive_config_error "$path" "legacy projectRoot must be a non-empty JSON string"
                     return 3
                 fi
             fi
@@ -157,6 +172,11 @@ spec_drive_validate_config_file() {
             return 3
             ;;
     esac
+
+    if spec_drive_json_has_key "$path" "cli" && ! jq -e '.cli | type == "string" and length > 0' "$path" >/dev/null 2>&1; then
+        spec_drive_config_error "$path" "cli must be a non-empty JSON string"
+        return 3
+    fi
 
     return 0
 }
