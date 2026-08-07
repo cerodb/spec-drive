@@ -304,13 +304,13 @@ INLINE_PROFILE
 
   MODEL_HOME="$TMPDIR_SMOKE/model-resolution-home"
   MODEL_WS="$TMPDIR_SMOKE/model-resolution-workspace"
-  MODEL_PROJECT="$MODEL_WS/Projects/P354b"
+  MODEL_PROJECT="$MODEL_WS/Projects/fixture-model-project"
   mkdir -p "$MODEL_HOME/.config/spec-drive" "$MODEL_PROJECT/spec"
   cat > "$MODEL_WS/.spec-drive-config.json" <<EOF_MODEL_WORKSPACE
 {"scope":"workspace","workspaceRoot":"$MODEL_WS","projectsPath":"Projects","cli":"codex"}
 EOF_MODEL_WORKSPACE
   cat > "$MODEL_PROJECT/.spec-drive-config.json" <<'EOF_MODEL_PROJECT'
-{"scope":"project","projectSlug":"P354b"}
+{"scope":"project","projectSlug":"fixture-model-project"}
 EOF_MODEL_PROJECT
 
   PARTIAL_STDERR="$TMPDIR_SMOKE/resolve-model-partial-project.stderr"
@@ -332,6 +332,27 @@ EOF_MODEL_PROJECT
     ok "partial project inheritance keeps stderr clean"
   else
     fail "partial project inheritance should not write stderr"
+  fi
+
+  PROJECT_OVERRIDE="$MODEL_WS/Projects/fixture-project-override"
+  mkdir -p "$PROJECT_OVERRIDE/deep"
+  cat > "$PROJECT_OVERRIDE/.spec-drive-config.json" <<'EOF_PROJECT_OVERRIDE'
+{"scope":"project","projectSlug":"fixture-project-override","cli":"claude-code"}
+EOF_PROJECT_OVERRIDE
+  PROJECT_OVERRIDE_STDERR="$TMPDIR_SMOKE/resolve-model-project-override.stderr"
+  set +e
+  PROJECT_OVERRIDE_OUT="$(
+    unset CLAUDE_PLUGIN_ROOT CLAUDECODE CODEX_HOME CODEX_SANDBOX
+    cd "$PROJECT_OVERRIDE/deep" && HOME="$MODEL_HOME" XDG_CONFIG_HOME="$MODEL_HOME/.config" bash "$RESOLVE_MODEL_SCRIPT" light 2>"$PROJECT_OVERRIDE_STDERR"
+  )"
+  PROJECT_OVERRIDE_EXIT=$?
+  set -e
+  if [ "$PROJECT_OVERRIDE_EXIT" -eq 0 ] \
+    && printf '%s\n' "$PROJECT_OVERRIDE_OUT" | grep -q '^model=haiku$' \
+    && [ ! -s "$PROJECT_OVERRIDE_STDERR" ]; then
+    ok "project cli override wins over workspace cli"
+  else
+    fail "project cli override should win over workspace cli"
   fi
 
   REPEAT_STDERR="$TMPDIR_SMOKE/resolve-model-repeat.stderr"
@@ -400,7 +421,7 @@ EOF_LEGACY_XDG_CONFIG
 {"scope":"workspace","workspaceRoot":"$INVALID_MODEL_WS","projectsPath":"Projects","cli":"codex"}
 EOF_INVALID_MODEL_WORKSPACE
   cat > "$INVALID_MODEL_WS/Projects/$INVALID_PROJECT_SLUG/.spec-drive-config.json" <<EOF_INVALID_MODEL_PROJECT
-{"scope":"project","projectSlug":"$INVALID_PROJECT_SLUG","workspaceRoot":"/tmp/not-allowed"}
+{"scope":"project","projectSlug":"$INVALID_PROJECT_SLUG","workspaceRoot":"synthetic-forbidden"}
 EOF_INVALID_MODEL_PROJECT
 
   INVALID_MODEL_STDERR="$TMPDIR_SMOKE/resolve-model-invalid-present.stderr"

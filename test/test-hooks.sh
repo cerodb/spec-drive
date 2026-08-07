@@ -7,6 +7,15 @@ cd "$PLUGIN_ROOT"
 
 PASS=0
 FAIL=0
+TEST_TEMP_DIRS=()
+
+cleanup_test_dirs() {
+  local dir
+  for dir in "${TEST_TEMP_DIRS[@]}"; do
+    rm -rf "$dir"
+  done
+}
+trap cleanup_test_dirs EXIT
 
 ok() {
   PASS=$((PASS + 1))
@@ -121,7 +130,7 @@ fi
 # Verify portable_realpath resolves correctly on this system. On macOS, /var is a
 # symlink to /private/var, so compare against the physical canonical path.
 REAL_TMP_DIR="$(mktemp -d)"
-trap 'rm -rf "$REAL_TMP_DIR"' EXIT
+TEST_TEMP_DIRS+=("$REAL_TMP_DIR")
 EXPECTED_REAL_TMP_DIR="$(cd "$REAL_TMP_DIR" && pwd -P)"
 RESOLVED="$(bash -c ". hooks/scripts/resolve-config.sh && portable_realpath \"$REAL_TMP_DIR\"")"
 if [ "$RESOLVED" = "$EXPECTED_REAL_TMP_DIR" ]; then
@@ -132,7 +141,7 @@ fi
 
 echo "-- Ambiguous project safety..."
 TMP_HOME="$(mktemp -d)"
-trap 'rm -rf "$TMP_HOME"' EXIT
+TEST_TEMP_DIRS+=("$TMP_HOME")
 mkdir -p "$TMP_HOME/spec-drive-projects/P100/spec" "$TMP_HOME/spec-drive-projects/P101/spec"
 mkdir -p "$TMP_HOME/.config/spec-drive"
 cat >"$TMP_HOME/.config/spec-drive/config.json" <<EOF
@@ -213,13 +222,14 @@ fi
 
 echo "-- Scoped per-key config resolution..."
 SCOPED_HOME="$(mktemp -d)"
-trap 'rm -rf "$SCOPED_HOME"' EXIT
+TEST_TEMP_DIRS+=("$SCOPED_HOME")
 
 SCOPED_FLAT_WS="$SCOPED_HOME/flat-workspace"
 SCOPED_NESTED_WS="$SCOPED_HOME/nested-workspace"
 mkdir -p "$SCOPED_FLAT_WS/P300/spec/deep" "$SCOPED_NESTED_WS/Projects/P301/spec/deep"
 mkdir -p "$SCOPED_HOME/.config/spec-drive"
-mkdir -p "$SCOPED_FLAT_WS/P300/.git" "$SCOPED_NESTED_WS/Projects/P301/.git"
+git -C "$SCOPED_FLAT_WS/P300" init -q
+git -C "$SCOPED_NESTED_WS/Projects/P301" init -q
 
 cat >"$SCOPED_FLAT_WS/.spec-drive-config.json" <<EOF
 {"scope":"workspace","workspaceRoot":"$SCOPED_FLAT_WS","projectsPath":"."}
@@ -250,7 +260,11 @@ fi
 NESTED_CONTEXT="$(HOME="$SCOPED_HOME" XDG_CONFIG_HOME="$SCOPED_HOME/.config" bash -c ". hooks/scripts/resolve-config.sh && spec_drive_resolve_context \"$SCOPED_NESTED_WS/Projects/P301/spec/deep\"")"
 if [ "$(echo "$NESTED_CONTEXT" | jq -r '.projectsContainer')" = "$SCOPED_NESTED_WS/Projects" ] \
   && [ "$(echo "$NESTED_CONTEXT" | jq -r '.projectRoot')" = "$SCOPED_NESTED_WS/Projects/P301" ] \
-  && [ "$(echo "$NESTED_CONTEXT" | jq -r '.projectSlug')" = "P301" ]; then
+  && [ "$(echo "$NESTED_CONTEXT" | jq -r '.projectSlug')" = "P301" ] \
+  && [ "$(git -C "$SCOPED_FLAT_WS/P300/spec/deep" rev-parse --show-toplevel)" = "$SCOPED_FLAT_WS/P300" ] \
+  && [ "$(git -C "$SCOPED_NESTED_WS/Projects/P301/spec/deep" rev-parse --show-toplevel)" = "$SCOPED_NESTED_WS/Projects/P301" ] \
+  && [ ! -e "$SCOPED_FLAT_WS/.git" ] \
+  && [ ! -e "$SCOPED_NESTED_WS/.git" ]; then
   ok "nested projectsPath resolves across independent project git roots"
 else
   fail "nested projectsPath did not resolve expected project context"
@@ -272,6 +286,14 @@ else
   fail "projects-container accessor or compatibility wrapper returned the wrong path"
 fi
 
+NEW_PROJECT_SLUG="P307"
+if [ "$FLAT_CONTAINER/$NEW_PROJECT_SLUG" = "$SCOPED_FLAT_WS/$NEW_PROJECT_SLUG" ] \
+  && [ "$FLAT_CONTAINER/$NEW_PROJECT_SLUG" != "$SCOPED_FLAT_WS/P300/$NEW_PROJECT_SLUG" ]; then
+  ok "creation resolved from an existing project targets the workspace container"
+else
+  fail "creation resolved from an existing project would nest under that project"
+fi
+
 MISSING_CONTEXT="$(HOME="$SCOPED_HOME" XDG_CONFIG_HOME="$SCOPED_HOME/missing-config" bash -c ". hooks/scripts/resolve-config.sh && spec_drive_resolve_context \"$SCOPED_HOME/no-config\"")"
 if [ "$(echo "$MISSING_CONTEXT" | jq -r '.projectsContainer')" = "$SCOPED_HOME/spec-drive-projects" ]; then
   ok "missing config tiers fall back to the legacy home projects container"
@@ -281,12 +303,91 @@ fi
 
 ISO_A="$SCOPED_FLAT_WS/P300"
 ISO_B="$SCOPED_NESTED_WS/Projects/P301"
-ISO_A_ROOT="$(HOME="$SCOPED_HOME" XDG_CONFIG_HOME="$SCOPED_HOME/.config" bash -c ". hooks/scripts/resolve-config.sh && spec_drive_resolve_value projectRoot \"$ISO_A/spec/deep\"")"
-ISO_B_ROOT="$(HOME="$SCOPED_HOME" XDG_CONFIG_HOME="$SCOPED_HOME/.config" bash -c ". hooks/scripts/resolve-config.sh && spec_drive_resolve_value projectRoot \"$ISO_B/spec/deep\"")"
-if [ "$ISO_A_ROOT" = "$ISO_A" ] && [ "$ISO_B_ROOT" = "$ISO_B" ] && [ "$ISO_A_ROOT" != "$ISO_B_ROOT" ]; then
-  ok "different project sessions resolve isolated project identities"
+ISO_A_OUTPUT="$SCOPED_HOME/session-a.json"
+ISO_B_OUTPUT="$SCOPED_HOME/session-b.json"
+ISO_A_ERROR="$SCOPED_HOME/session-a.err"
+ISO_B_ERROR="$SCOPED_HOME/session-b.err"
+HOME="$SCOPED_HOME" XDG_CONFIG_HOME="$SCOPED_HOME/.config" bash -c ". hooks/scripts/resolve-config.sh && spec_drive_resolve_context \"$ISO_A/spec/deep\"" >"$ISO_A_OUTPUT" 2>"$ISO_A_ERROR" &
+ISO_A_PID=$!
+HOME="$SCOPED_HOME" XDG_CONFIG_HOME="$SCOPED_HOME/.config" bash -c ". hooks/scripts/resolve-config.sh && spec_drive_resolve_context \"$ISO_B/spec/deep\"" >"$ISO_B_OUTPUT" 2>"$ISO_B_ERROR" &
+ISO_B_PID=$!
+set +e
+wait "$ISO_A_PID"
+ISO_A_STATUS=$?
+wait "$ISO_B_PID"
+ISO_B_STATUS=$?
+set -e
+ISO_A_ROOT="$(jq -r '.projectRoot // empty' "$ISO_A_OUTPUT" 2>/dev/null || true)"
+ISO_B_ROOT="$(jq -r '.projectRoot // empty' "$ISO_B_OUTPUT" 2>/dev/null || true)"
+if [ "$ISO_A_STATUS" -eq 0 ] && [ "$ISO_B_STATUS" -eq 0 ] \
+  && [ "$ISO_A_ROOT" = "$ISO_A" ] && [ "$ISO_B_ROOT" = "$ISO_B" ] \
+  && [ "$ISO_A_ROOT" != "$ISO_B_ROOT" ] \
+  && [ ! -s "$ISO_A_ERROR" ] && [ ! -s "$ISO_B_ERROR" ] \
+  && [ ! -e "$SCOPED_HOME/.config/spec-drive/active-project" ]; then
+  ok "concurrent project sessions resolve isolated identities without shared active state"
 else
-  fail "different project sessions did not resolve isolated project identities"
+  fail "concurrent project sessions did not remain isolated"
+fi
+
+DETERMINISTIC_FIRST="$(printf '%s' "$FLAT_NESTED_CONTEXT" | jq -cS .)"
+DETERMINISTIC_MATCH=true
+i=1
+while [ "$i" -le 20 ]; do
+  DETERMINISTIC_NEXT="$(HOME="$SCOPED_HOME" XDG_CONFIG_HOME="$SCOPED_HOME/.config" bash -c ". hooks/scripts/resolve-config.sh && spec_drive_resolve_context \"$SCOPED_FLAT_WS/P300/spec/deep\"" | jq -cS .)"
+  if [ "$DETERMINISTIC_NEXT" != "$DETERMINISTIC_FIRST" ]; then
+    DETERMINISTIC_MATCH=false
+    break
+  fi
+  i=$((i + 1))
+done
+if [ "$DETERMINISTIC_MATCH" = "true" ]; then
+  ok "fixed cwd and config produce 20 identical context resolutions"
+else
+  fail "fixed cwd and config did not produce 20 identical context resolutions"
+fi
+
+WORKSPACE_OVERRIDE_WS="$SCOPED_HOME/workspace-cli-override"
+mkdir -p "$WORKSPACE_OVERRIDE_WS/Projects/P304/deep"
+cat >"$WORKSPACE_OVERRIDE_WS/.spec-drive-config.json" <<EOF
+{"scope":"workspace","workspaceRoot":"$WORKSPACE_OVERRIDE_WS","projectsPath":"Projects","cli":"codex"}
+EOF
+cat >"$WORKSPACE_OVERRIDE_WS/Projects/P304/.spec-drive-config.json" <<'EOF'
+{"scope":"project","projectSlug":"P304"}
+EOF
+WORKSPACE_OVERRIDE_CLI="$(HOME="$SCOPED_HOME" XDG_CONFIG_HOME="$SCOPED_HOME/.config" bash -c ". hooks/scripts/resolve-config.sh && spec_drive_resolve_value cli \"$WORKSPACE_OVERRIDE_WS/Projects/P304/deep\"")"
+if [ "$WORKSPACE_OVERRIDE_CLI" = "codex" ]; then
+  ok "partial project config inherits workspace key before XDG fallback"
+else
+  fail "partial project config did not inherit workspace key"
+fi
+
+LEGACY_LOCAL_WS="$SCOPED_HOME/legacy-local-workspace"
+LEGACY_LOCAL_CONTAINER="$SCOPED_HOME/legacy-local-projects"
+mkdir -p "$LEGACY_LOCAL_WS/repo/deep" "$LEGACY_LOCAL_CONTAINER/P305"
+cat >"$LEGACY_LOCAL_WS/repo/.spec-drive-config.json" <<EOF
+{"projectRoot":"$LEGACY_LOCAL_CONTAINER"}
+EOF
+LEGACY_LOCAL_RESOLVED="$(HOME="$SCOPED_HOME" XDG_CONFIG_HOME="$SCOPED_HOME/.config" bash -c ". hooks/scripts/resolve-config.sh && spec_drive_resolve_projects_container \"$LEGACY_LOCAL_WS/repo/deep\"")"
+if [ "$LEGACY_LOCAL_RESOLVED" = "$LEGACY_LOCAL_CONTAINER" ]; then
+  ok "legacy unscoped projectRoot remains compatible"
+else
+  fail "legacy unscoped projectRoot did not resolve its container"
+fi
+
+LEGACY_FLAT_HOME="$SCOPED_HOME/legacy-flat-home"
+LEGACY_FLAT_CONTAINER="$SCOPED_HOME/legacy-flat-projects"
+LEGACY_FLAT_PROJECT="$LEGACY_FLAT_CONTAINER/P306"
+mkdir -p "$LEGACY_FLAT_HOME/.config/spec-drive" "$LEGACY_FLAT_PROJECT/deep"
+cat >"$LEGACY_FLAT_HOME/.config/spec-drive/config.json" <<EOF
+{"projectRoot":"$LEGACY_FLAT_CONTAINER","cli":"claude-code"}
+EOF
+LEGACY_FLAT_CONTEXT="$(HOME="$LEGACY_FLAT_HOME" XDG_CONFIG_HOME="$LEGACY_FLAT_HOME/.config" bash -c ". hooks/scripts/resolve-config.sh && spec_drive_resolve_context \"$LEGACY_FLAT_PROJECT/deep\"")"
+if [ "$(printf '%s' "$LEGACY_FLAT_CONTEXT" | jq -r '.projectsContainer')" = "$LEGACY_FLAT_CONTAINER" ] \
+  && [ "$(printf '%s' "$LEGACY_FLAT_CONTEXT" | jq -r '.cli')" = "claude-code" ] \
+  && [ ! -e "$LEGACY_FLAT_PROJECT/spec" ]; then
+  ok "legacy XDG fallback supports flat projects without spec directory"
+else
+  fail "legacy XDG fallback did not support a flat project without spec directory"
 fi
 
 INVALID_PROJECT="$SCOPED_HOME/invalid-workspace/Projects/P302"
@@ -417,6 +518,40 @@ else
   fail "non-object config root did not fail with controlled Spec-Drive diagnostic"
 fi
 
+INVALID_JSON_WS="$SCOPED_HOME/invalid-json-workspace"
+mkdir -p "$INVALID_JSON_WS/deep"
+cat >"$INVALID_JSON_WS/.spec-drive-config.json" <<'EOF'
+{"scope":"workspace"
+EOF
+set +e
+INVALID_JSON_OUTPUT="$(HOME="$SCOPED_HOME" XDG_CONFIG_HOME="$SCOPED_HOME/.config" bash -c ". hooks/scripts/resolve-config.sh && spec_drive_resolve_context \"$INVALID_JSON_WS/deep\"" 2>&1)"
+INVALID_JSON_STATUS=$?
+set -e
+if [ "$INVALID_JSON_STATUS" -eq 3 ] \
+  && echo "$INVALID_JSON_OUTPUT" | grep -q "$INVALID_JSON_WS/.spec-drive-config.json" \
+  && echo "$INVALID_JSON_OUTPUT" | grep -q 'invalid JSON'; then
+  ok "invalid JSON fails with exit 3 and offending config path"
+else
+  fail "invalid JSON did not fail with controlled diagnostic"
+fi
+
+INVALID_SCOPE_WS="$SCOPED_HOME/invalid-scope-workspace"
+mkdir -p "$INVALID_SCOPE_WS/deep"
+cat >"$INVALID_SCOPE_WS/.spec-drive-config.json" <<'EOF'
+{"scope":"fixture","workspaceRoot":".","projectsPath":"Projects"}
+EOF
+set +e
+INVALID_SCOPE_OUTPUT="$(HOME="$SCOPED_HOME" XDG_CONFIG_HOME="$SCOPED_HOME/.config" bash -c ". hooks/scripts/resolve-config.sh && spec_drive_resolve_context \"$INVALID_SCOPE_WS/deep\"" 2>&1)"
+INVALID_SCOPE_STATUS=$?
+set -e
+if [ "$INVALID_SCOPE_STATUS" -eq 3 ] \
+  && echo "$INVALID_SCOPE_OUTPUT" | grep -q "$INVALID_SCOPE_WS/.spec-drive-config.json" \
+  && echo "$INVALID_SCOPE_OUTPUT" | grep -q "unsupported scope 'fixture'"; then
+  ok "invalid scope fails with exit 3 and offending config path"
+else
+  fail "invalid scope did not fail with controlled diagnostic"
+fi
+
 echo "-- find -mmin portability (US2)..."
 # AC1: no find -mmin usage remains in stop-watcher.sh (exclude comment lines)
 if ! grep -vE '^\s*#' hooks/scripts/stop-watcher.sh | grep -qE 'find\s.*-mmin'; then
@@ -434,7 +569,7 @@ fi
 
 # AC2 + AC3: old files are deleted; recent files and unsupported-mtime are handled gracefully
 CLEANUP_TMP="$(mktemp -d)"
-trap 'rm -rf "$CLEANUP_TMP"' EXIT
+TEST_TEMP_DIRS+=("$CLEANUP_TMP")
 
 # Create a mock project structure
 mkdir -p "$CLEANUP_TMP/sd-projects/P999/spec"
