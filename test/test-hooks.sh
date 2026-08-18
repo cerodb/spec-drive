@@ -140,7 +140,9 @@ else
 fi
 
 echo "-- Ambiguous project safety..."
-TMP_HOME="$(mktemp -d)"
+# Canonicalize: on macOS mktemp -d returns a /var symlink path, while the
+# resolver reports the physical /private/var path it resolves to.
+TMP_HOME="$(cd "$(mktemp -d)" && pwd -P)"
 TEST_TEMP_DIRS+=("$TMP_HOME")
 mkdir -p "$TMP_HOME/spec-drive-projects/P100/spec" "$TMP_HOME/spec-drive-projects/P101/spec"
 mkdir -p "$TMP_HOME/.config/spec-drive"
@@ -221,7 +223,7 @@ else
 fi
 
 echo "-- Scoped per-key config resolution..."
-SCOPED_HOME="$(mktemp -d)"
+SCOPED_HOME="$(cd "$(mktemp -d)" && pwd -P)"
 TEST_TEMP_DIRS+=("$SCOPED_HOME")
 
 SCOPED_FLAT_WS="$SCOPED_HOME/flat-workspace"
@@ -571,7 +573,7 @@ else
 fi
 
 # AC2 + AC3: old files are deleted; recent files and unsupported-mtime are handled gracefully
-CLEANUP_TMP="$(mktemp -d)"
+CLEANUP_TMP="$(cd "$(mktemp -d)" && pwd -P)"
 TEST_TEMP_DIRS+=("$CLEANUP_TMP")
 
 # Create a mock project structure

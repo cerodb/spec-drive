@@ -116,7 +116,9 @@ else
   fail "create-project.sh is not executable"
 fi
 
-TMP_REGISTRAR="$(mktemp -d)"
+# Canonicalize: on macOS mktemp -d returns a /var symlink path, while the
+# resolver reports the physical /private/var path it resolves to.
+TMP_REGISTRAR="$(cd "$(mktemp -d)" && pwd -P)"
 PROJECTS="$TMP_REGISTRAR/success-projects"
 SLUG="p900-alpha.registry"
 GOAL="Build deterministic registrar coverage with spaces and quoted-safe text."
