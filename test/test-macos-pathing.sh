@@ -71,19 +71,19 @@ else
   fail "logical and physical paths address different directories"
 fi
 
-echo "-- Resolver reports the physical path for a symlinked start dir..."
+echo "-- Resolver canonicalizes a symlinked start dir and workspace root..."
 WS_LOGICAL="$LOGICAL_FIXTURE/workspace"
 WS_PHYSICAL="$PHYSICAL_FIXTURE/workspace"
 mkdir -p "$WS_LOGICAL/P400/spec"
 cat >"$WS_LOGICAL/.spec-drive-config.json" <<EOF
-{"scope":"workspace","workspaceRoot":"$WS_PHYSICAL","projectsPath":"."}
+{"scope":"workspace","workspaceRoot":"$WS_LOGICAL","projectsPath":"."}
 EOF
 
 RESOLVED_CONTAINER="$(HOME="$PHYSICAL_FIXTURE" XDG_CONFIG_HOME="$PHYSICAL_FIXTURE/no-config" \
   bash -c ". hooks/scripts/resolve-config.sh && spec_drive_resolve_projects_container \"$WS_LOGICAL/P400\"")"
 
 if [ "$RESOLVED_CONTAINER" = "$WS_PHYSICAL" ]; then
-  ok "resolver canonicalizes a symlinked start dir to the physical container"
+  ok "a symlinked start dir and workspaceRoot resolve to the physical container"
 else
   fail "resolver returned '$RESOLVED_CONTAINER' (expected '$WS_PHYSICAL')"
 fi
@@ -105,7 +105,7 @@ for suite in hooks schema registrar cross-cli smoke; do
     ok "test-$suite.sh passes under a symlinked temp root"
   else
     fail "test-$suite.sh fails under a symlinked temp root"
-    grep "FAIL:" "$SYMLINK_ROOT/$suite.log" | head -5 | sed 's/^/      /'
+    grep "FAIL:" "$SYMLINK_ROOT/$suite.log" | head -5 | sed 's/^/      /' || true
   fi
 done
 
