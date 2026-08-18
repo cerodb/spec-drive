@@ -18,7 +18,9 @@ fail() {
   echo "  FAIL: $1"
 }
 
-TMP_DIR="$(mktemp -d)"
+# Canonicalize: on macOS mktemp -d returns a /var symlink path, while the
+# resolver reports the physical /private/var path it resolves to.
+TMP_DIR="$(cd "$(mktemp -d)" && pwd -P)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
 SPEC_DIR="$TMP_DIR/P999-cross-cli/spec"

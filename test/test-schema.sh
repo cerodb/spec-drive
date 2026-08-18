@@ -301,7 +301,9 @@ else
   fail "config schema root shape references are incorrect"
 fi
 
-TMP_CONFIG_DIR="$(mktemp -d)"
+# Canonicalize: on macOS mktemp -d returns a /var symlink path, while the
+# resolver reports the physical /private/var path it resolves to.
+TMP_CONFIG_DIR="$(cd "$(mktemp -d)" && pwd -P)"
 trap 'rm -rf "$TMP_CONFIG_DIR"' EXIT
 
 WORKSPACE_ROOT="$TMP_CONFIG_DIR/workspace"

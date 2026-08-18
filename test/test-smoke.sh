@@ -4,7 +4,9 @@ set -euo pipefail
 
 
 echo "-- Legacy no-model task compatibility (PG115)..."
-pg115_tmp="$(mktemp -d)"
+# Canonicalize: on macOS mktemp -d returns a /var symlink path, while the
+# resolver reports the physical /private/var path it resolves to.
+pg115_tmp="$(cd "$(mktemp -d)" && pwd -P)"
 cat > "$pg115_tmp/tasks.md" <<'EOF_PG115_LEGACY_TASK'
 - [ ] 1.1 Legacy task without model field
   - **Do**: Keep backward compatibility for pre-router task blocks.
@@ -63,7 +65,7 @@ echo "=== Spec-Drive Smoke Test ==="
 
 # Setup: create a temp project directory mimicking a real spec-drive project
 echo "-- Setup: creating temp project dir..."
-TMPDIR_SMOKE="$(mktemp -d)"
+TMPDIR_SMOKE="$(cd "$(mktemp -d)" && pwd -P)"
 SPEC_DIR="$TMPDIR_SMOKE/spec"
 mkdir -p "$SPEC_DIR"
 

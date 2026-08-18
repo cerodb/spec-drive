@@ -140,7 +140,9 @@ else
 fi
 
 echo "-- Ambiguous project safety..."
-TMP_HOME="$(mktemp -d)"
+# Canonicalize: on macOS mktemp -d returns a /var symlink path, while the
+# resolver reports the physical /private/var path it resolves to.
+TMP_HOME="$(cd "$(mktemp -d)" && pwd -P)"
 TEST_TEMP_DIRS+=("$TMP_HOME")
 mkdir -p "$TMP_HOME/spec-drive-projects/P100/spec" "$TMP_HOME/spec-drive-projects/P101/spec"
 mkdir -p "$TMP_HOME/.config/spec-drive"
@@ -221,7 +223,7 @@ else
 fi
 
 echo "-- Scoped per-key config resolution..."
-SCOPED_HOME="$(mktemp -d)"
+SCOPED_HOME="$(cd "$(mktemp -d)" && pwd -P)"
 TEST_TEMP_DIRS+=("$SCOPED_HOME")
 
 SCOPED_FLAT_WS="$SCOPED_HOME/flat-workspace"
@@ -294,6 +296,9 @@ else
   fail "creation resolved from an existing project would nest under that project"
 fi
 
+# The start dir must exist: a missing dir makes the resolver fall back to PWD,
+# which would discover whatever workspace config sits above this repo.
+mkdir -p "$SCOPED_HOME/no-config"
 MISSING_CONTEXT="$(HOME="$SCOPED_HOME" XDG_CONFIG_HOME="$SCOPED_HOME/missing-config" bash -c ". hooks/scripts/resolve-config.sh && spec_drive_resolve_context \"$SCOPED_HOME/no-config\"")"
 if [ "$(echo "$MISSING_CONTEXT" | jq -r '.projectsContainer')" = "$SCOPED_HOME/spec-drive-projects" ]; then
   ok "missing config tiers fall back to the legacy home projects container"
@@ -568,7 +573,7 @@ else
 fi
 
 # AC2 + AC3: old files are deleted; recent files and unsupported-mtime are handled gracefully
-CLEANUP_TMP="$(mktemp -d)"
+CLEANUP_TMP="$(cd "$(mktemp -d)" && pwd -P)"
 TEST_TEMP_DIRS+=("$CLEANUP_TMP")
 
 # Create a mock project structure
