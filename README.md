@@ -94,7 +94,8 @@ Prerequisites on macOS: `bash`, `git`, `jq`. Install `jq` via Homebrew (`brew in
 
 ## Release Notes
 
-- Current release: `v1.4.0` (2026-08-07)
+- Current release: `v1.4.1` (2026-08-18)
+- `v1.4.1` is test-harness maintenance with no runtime change over `v1.4.0`: macOS path assertions were comparing raw `mktemp -d` output against symlink-resolved resolver output, and a new suite covers a workspace root reached through a symlink.
 - `v1.4.0` adds scoped per-key configuration, atomic project scaffolding, canonical project artifact destinations, and expanded portability/security regression coverage.
 - `v1.2.0` packaged the successful P336 calibration pass: direct `tasks` command surface, tighter coordinator conflict scoring, and restored design/task compression.
 - `v1.2.1` is a small post-QA polish release: related-spec discovery and conditional PR lifecycle gating.
