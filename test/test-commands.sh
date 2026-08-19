@@ -459,6 +459,27 @@ for DOC in skills/spec-workflow/SKILL.md README.md INSTALL.md; do
   assert_not_contains "$DOC" '/home/' "$DOC does not leak private local absolute paths"
 done
 
+echo "-- Checking advertised version consistency..."
+# The release checklist has been missed twice by hand (marketplace index in
+# 2026-04, README release note in 2026-08). Assert it instead of remembering it.
+PKG_VERSION="$(grep -m1 '"version"' package.json | sed -E 's/.*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')"
+MANIFEST_VERSION="$(grep -m1 '"version"' .claude-plugin/plugin.json | sed -E 's/.*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')"
+README_VERSION="$(grep -m1 -E '^- Current release: `v[0-9]+\.[0-9]+\.[0-9]+`' README.md | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || true)"
+
+if [ "$MANIFEST_VERSION" = "$PKG_VERSION" ]; then
+  ok ".claude-plugin/plugin.json version matches package.json ($PKG_VERSION)"
+else
+  fail ".claude-plugin/plugin.json ($MANIFEST_VERSION) does not match package.json ($PKG_VERSION)"
+fi
+
+if [ -z "$README_VERSION" ]; then
+  fail "README.md has no parseable '- Current release: \`vX.Y.Z\`' line"
+elif [ "$README_VERSION" = "$PKG_VERSION" ]; then
+  ok "README.md current release matches package.json ($PKG_VERSION)"
+else
+  fail "README.md current release ($README_VERSION) does not match package.json ($PKG_VERSION)"
+fi
+
 echo ""
 echo "Commands checked: ${#COMMANDS[@]}"
 echo "Passed: $PASS | Failed: $FAIL"
