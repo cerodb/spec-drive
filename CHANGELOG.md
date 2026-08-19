@@ -1,5 +1,31 @@
 # Changelog
 
+## v1.4.1 — 2026-08-18
+
+Test-harness maintenance. **No runtime change.**
+
+The plugin code shipped by v1.4.0 is unchanged: no command, agent, hook, skill,
+schema, profile, or template was touched. Installing v1.4.1 over v1.4.0 changes
+nothing at runtime.
+
+### Fixed
+
+- Test suites built expected paths from the raw output of `mktemp -d` and compared
+  them against resolver output, which goes through `portable_realpath`. On macOS the
+  temp root is reached through a symlink (`/var` -> `/private/var`), so the two sides
+  disagreed and the suites failed on `macos-latest` while passing on `ubuntu-latest`.
+  The product behaviour was correct throughout.
+- A hooks assertion passed a non-existent start dir, so it exercised the `$PWD`
+  fallback instead of the intended tier and could pick up a real workspace config
+  above the repo.
+- A failure diagnostic ran unguarded under `set -e` with pipefail, so a red suite
+  with no `FAIL:` lines aborted the loop and hid every suite after it.
+
+### Added
+
+- `test/test-macos-pathing.sh`, covering a workspace root configured through a
+  symlink, wired into `npm test`.
+
 ## v1.4.0 — 2026-08-07
 
 Scoped project registration and portable workspace topology.
