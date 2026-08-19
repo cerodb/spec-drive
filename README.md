@@ -32,9 +32,9 @@ This repo is not equally automatic everywhere.
 Honest version: this repo is fully usable today, but only Claude-style runtimes have native plugin metadata in-tree.
 
 
-## Adaptive Model Router (v1.3.1)
+## Adaptive Model Router
 
-Spec-Drive v1.3.1 adds optional `model:` task metadata using abstract tiers: `light`,
+Spec-Drive supports optional `model:` task metadata using abstract tiers: `light`,
 `standard`, `advanced`, and `frontier`. The planner assigns tiers with a six-signal heuristic;
 the executor records `model_used:` for completed tasks.
 
@@ -66,7 +66,7 @@ Example local override:
 }
 ```
 
-Real subprocess probes for v1.3.1 confirmed:
+Real subprocess probes confirmed:
 
 - `codex exec -m <model> -s workspace-write -- < {promptfile}` runs successfully for all four mapped Codex tiers above.
 - A Codex subprocess can receive the CLI-neutral implementer contract, implement a canary task, verify it,
@@ -83,7 +83,7 @@ Notes from the live run:
 
 ## macOS Compatibility
 
-Spec-Drive v1.1 is tested on both Linux and macOS via GitHub Actions CI.
+Spec-Drive is tested on both Linux and macOS via GitHub Actions CI, on every push and pull request.
 
 All shell scripts avoid GNU-only extensions:
 
@@ -97,8 +97,9 @@ Prerequisites on macOS: `bash`, `git`, `jq`. Install `jq` via Homebrew (`brew in
 - Current release: `v1.4.1` (2026-08-18)
 - `v1.4.1` is test-harness maintenance with no runtime change over `v1.4.0`: macOS path assertions were comparing raw `mktemp -d` output against symlink-resolved resolver output, and a new suite covers a workspace root reached through a symlink.
 - `v1.4.0` adds scoped per-key configuration, atomic project scaffolding, canonical project artifact destinations, and expanded portability/security regression coverage.
-- `v1.2.0` packaged the successful P336 calibration pass: direct `tasks` command surface, tighter coordinator conflict scoring, and restored design/task compression.
+- `v1.3.0` introduced the adaptive model router: optional `model:`/`model_used:` task metadata, abstract routing tiers, and `/spec-drive:implement` dispatch through the model resolver. The `v1.3.1`-`v1.3.4` patches added concrete Codex subprocess model IDs and the CLI-neutral implementer contract, fixed resolver lookup via `${CLAUDE_PLUGIN_ROOT}`, and moved subprocess prompts to a file handoff.
 - `v1.2.1` is a small post-QA polish release: related-spec discovery and conditional PR lifecycle gating.
+- `v1.2.0` packaged the successful calibration pass: direct `tasks` command surface, tighter coordinator conflict scoring, and restored design/task compression.
 
 ## Validation Status
 
@@ -206,7 +207,7 @@ If your runtime cannot execute shell hooks directly, preserve the same behavior 
 - Session start: detect active project and surface state/context
 - Stop: continue execution loop safely, with ambiguity and iteration guards
 
-This is deliberate. The portability claim is about the artifact/protocol design, not about shipping one-click adapters for every CLI in `v1.0.0`.
+This is deliberate. The portability claim is about the artifact/protocol design, not about shipping one-click adapters for every CLI.
 
 ## Project Layout at Runtime
 
