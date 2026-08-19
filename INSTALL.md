@@ -207,9 +207,9 @@ Recommended approach:
 3. Keep the exact artifact chain and state file naming.
 4. Reimplement session-start and stop logic using Coda's own runtime hooks or orchestration layer.
 
-Treat both Kiro and Coda support as manual adapter ports in `v1.0.0`, not native packaged installs.
+Treat both Kiro and Coda support as manual adapter ports, not native packaged installs.
 
-## Available Commands (v1.1)
+## Available Commands
 
 After installation, the following commands are available:
 
