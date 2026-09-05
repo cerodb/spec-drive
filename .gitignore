@@ -10,3 +10,4 @@ profiles.local.json
 # Development artifacts (debate transcripts)
 agents/adversarial/
 debate-transcripts/
+test/.tmp-kernel/
