@@ -45,6 +45,147 @@
       "enum": ["idea", "research", "requirements", "design", "tasks", "execution", "completed"],
       "description": "Current phase in the spec-driven development lifecycle"
     },
+    "schemaVersion": {
+      "type": "integer",
+      "default": 2,
+      "description": "State schema version"
+    },
+    "runId": {
+      "type": "string",
+      "description": "Stable execution run identity for worktree and attempt names"
+    },
+    "planRevision": {
+      "type": "string",
+      "description": "Approved tasks.md byte hash that introduced the executable task plan"
+    },
+    "taskOrder": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Original approved task order by canonical taskId"
+    },
+    "currentTaskId": {
+      "type": ["string", "null"],
+      "description": "Canonical taskId currently being dispatched, reported, or accepted"
+    },
+    "currentStage": {
+      "type": "string",
+      "enum": ["preflight", "ready", "dispatching", "running", "reported_complete", "indeterminate", "completed"],
+      "description": "Current ledger stage"
+    },
+    "activeAttemptId": {
+      "type": ["string", "null"],
+      "description": "Attempt currently active or awaiting manual recovery"
+    },
+    "lastFailureClass": {
+      "type": ["string", "null"],
+      "description": "Most recent classified failure"
+    },
+    "budgets": {
+      "type": "object",
+      "properties": {
+        "maxDispatchFailures": { "type": "integer", "minimum": 1, "default": 3 },
+        "maxExecutionAttempts": { "type": "integer", "minimum": 1, "default": 5 },
+        "maxGlobalOperations": { "type": "integer", "minimum": 1, "default": 100 },
+        "globalBudgetUsed": { "type": "integer", "minimum": 0, "default": 0 }
+      },
+      "required": ["maxDispatchFailures", "maxExecutionAttempts", "maxGlobalOperations", "globalBudgetUsed"],
+      "additionalProperties": false
+    },
+    "approvals": {
+      "type": "object",
+      "description": "Explicit artifact approvals keyed by artifact name",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "sha256": { "type": "string" },
+          "approvalEvidence": { "type": "string" },
+          "approvedAt": { "type": "string", "format": "date-time" },
+          "taskOrder": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "taskChecks": {
+            "type": "object",
+            "additionalProperties": { "type": "boolean" }
+          },
+          "taskDigests": {
+            "type": "object",
+            "additionalProperties": { "type": "string" }
+          }
+        },
+        "required": ["sha256", "approvalEvidence", "approvedAt"],
+        "additionalProperties": false
+      }
+    },
+    "taskStates": {
+      "type": "object",
+      "description": "Execution state keyed by canonical taskId",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "taskId": { "type": "string" },
+          "status": {
+            "type": "string",
+            "enum": ["pending", "in_progress", "verified_in_worktree", "promotion_pending", "accepted", "blocked", "failed"]
+          },
+          "required": { "type": "boolean" },
+          "attempts": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "latestAttemptId": { "type": "string" },
+          "dispatchFailures": { "type": "integer", "minimum": 0, "default": 0 },
+          "executionAttempts": { "type": "integer", "minimum": 0, "default": 0 },
+          "acceptance": { "type": "object" }
+        },
+        "required": ["taskId", "status", "required", "attempts"],
+        "additionalProperties": false
+      }
+    },
+    "attempts": {
+      "type": "object",
+      "description": "Attempt records keyed by attemptId",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "attemptId": { "type": "string" },
+          "taskId": { "type": "string" },
+          "sequence": { "type": "integer" },
+          "dispatchBudgetUsed": { "type": "integer" },
+          "executionBudgetUsed": { "type": "integer" },
+          "globalBudgetUsed": { "type": "integer" },
+          "state": {
+            "type": "string",
+            "enum": ["reserved", "dispatching", "running", "reported_complete", "reported_blocked", "indeterminate", "accepted", "abandoned"]
+          },
+          "actor": { "type": "string" },
+          "adapterStart": { "type": "string" },
+          "worktree": {
+            "type": "object",
+            "properties": {
+              "path": { "type": "string" },
+              "branch": { "type": "string" },
+              "targetHeadAtCreate": { "type": "string" },
+              "files": {
+                "type": "array",
+                "items": { "type": "string" }
+              }
+            },
+            "required": ["path", "branch", "targetHeadAtCreate", "files"],
+            "additionalProperties": false
+          },
+          "report": { "type": "object" },
+          "promotion": { "type": "object" }
+        },
+        "required": ["attemptId", "taskId", "sequence", "dispatchBudgetUsed", "executionBudgetUsed", "globalBudgetUsed", "state", "worktree"],
+        "additionalProperties": false
+      }
+    },
+    "legacyMigratedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Timestamp when unambiguous legacy taskIndex state was converted in place"
+    },
     "mode": {
       "type": "string",
       "enum": ["normal", "auto"],
