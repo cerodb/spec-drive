@@ -236,7 +236,7 @@ else
   CODEX_EXIT=$?
   set -e
 
-  if [ "$CODEX_EXIT" -eq 0 ] && printf '%s\n' "$CODEX_OUT" | grep -q '^cmd=codex exec -m gpt-5.4-mini -s workspace-write -- < {promptfile}$'; then
+  if [ "$CODEX_EXIT" -eq 0 ] && printf '%s\n' "$CODEX_OUT" | grep -q '^cmd=codex exec -m gpt-5.6-luna -s workspace-write -- < {promptfile}$'; then
     ok "resolver maps codex light tier to a concrete subprocess command"
   else
     fail "resolver should map codex light tier to a concrete subprocess command"
@@ -324,7 +324,7 @@ EOF_MODEL_PROJECT
   PARTIAL_EXIT=$?
   set -e
 
-  if [ "$PARTIAL_EXIT" -eq 0 ] && printf '%s\n' "$PARTIAL_OUT" | grep -q '^cmd=codex exec -m gpt-5.4-mini -s workspace-write -- < {promptfile}$'; then
+  if [ "$PARTIAL_EXIT" -eq 0 ] && printf '%s\n' "$PARTIAL_OUT" | grep -q '^cmd=codex exec -m gpt-5.6-luna -s workspace-write -- < {promptfile}$'; then
     ok "partial project config inherits workspace cli selection"
   else
     fail "partial project config should inherit workspace cli selection"
