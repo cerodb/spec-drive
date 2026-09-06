@@ -200,10 +200,12 @@ cd spec-drive
 ### 2. Validate the repo
 
 ```bash
+npm ci
 npm test
 ```
 
-If you do not want `npm`, the tests are plain shell scripts:
+The full suite needs the development dependencies installed by `npm ci`.
+The shell-only subset below is a limited smoke check:
 
 ```bash
 bash test/test-structure.sh

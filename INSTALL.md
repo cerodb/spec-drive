@@ -36,7 +36,7 @@ Install these first:
 
 Optional but recommended:
 
-- `npm` so you can run the bundled test suite with `npm test`
+- `npm` to install development dependencies and run the complete test suite
 
 ## 1. Clone the Repo
 
@@ -48,16 +48,17 @@ cd spec-drive
 ## 2. Validate the Checkout
 
 ```bash
+npm ci
 npm test
 ```
 
 Current validation truth:
 
 - `npm test` is the main checkout validation path today
-- the tests are plain shell scripts and are intended to remain portable
+- the complete suite combines portable shell checks and Node.js fixtures; Ajv is a development-only dependency for real schema validation
 - Codex/Kiro/Coda native installers are not part of this repo yet
 
-Or run the shell checks directly:
+For a limited smoke check, run the shell subset directly (this omits the Ajv and integrated release fixtures):
 
 ```bash
 bash test/test-structure.sh
@@ -305,7 +306,7 @@ Current intended behavior:
 - research stops for review
 - requirements stops for review
 - design stops for review
-- tasks may hand off directly into `/spec-drive:implement`
+- explicitly approved tasks may hand off into `/spec-drive:implement`
 
 Reason:
 
