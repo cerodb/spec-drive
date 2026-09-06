@@ -43,6 +43,33 @@ sha_file() {
   node -e 'const fs=require("fs"), crypto=require("crypto"); process.stdout.write(crypto.createHash("sha256").update(fs.readFileSync(process.argv[1])).digest("hex"))' "$1"
 }
 
+fixture_git() {
+  local repo="$1"
+  shift
+  git -C "$repo" "$@"
+}
+
+init_fixture_repo() {
+  local repo="$1"
+  git -C "$repo" init -q
+  git -C "$repo" config user.name "Spec Drive Fixture"
+  git -C "$repo" config user.email "spec-drive-fixture@example.invalid"
+  git -C "$repo" config gpg.format openpgp
+  git -C "$repo" config commit.gpgsign false
+  git -C "$repo" config tag.gpgSign false
+  git -C "$repo" add .
+  git -C "$repo" commit --allow-empty -q -m "fixture baseline"
+}
+
+assert_file_changed() {
+  local file="$1"
+  local before_sha="$2"
+  local label="$3"
+  local after_sha
+  after_sha="$(sha_file "$file")"
+  [[ "$after_sha" != "$before_sha" ]] || fail "$label did not mutate $file"
+}
+
 write_fixture() {
   local dir="$1"
   mkdir -p "$dir/spec" "$dir/repo/src"
@@ -131,6 +158,120 @@ design_sha: "$design_sha"
   - **Timeout**: 120
   - **Commit**: none
 EOF_TASKS
+  init_fixture_repo "$dir/repo"
+}
+
+write_flow_fixture() {
+  local dir="$1"
+  mkdir -p "$dir/spec" "$dir/repo/src"
+  printf 'before\n' > "$dir/repo/src/tracked name.txt"
+  cat > "$dir/spec/requirements.md" <<'EOF_REQ'
+---
+spec: "flow"
+phase: requirements
+status: "complete"
+---
+
+# Requirements: flow
+
+## User Stories
+
+#### US-1: Isolated acceptance
+**Acceptance Criteria:**
+- [ ] AC-1.1: First code task is promoted only after authoritative Verify.
+- [ ] AC-1.2: Second code task is promoted only after authoritative Verify.
+- [ ] AC-1.3: Checkpoint records evidence without a code commit.
+- [ ] AC-1.4: False completion signals do not accept.
+- [ ] AC-1.5: Dirty target state blocks promotion without losing bytes.
+
+## Functional Requirements
+
+| ID | Description | Priority | Verification |
+|----|-------------|----------|--------------|
+| FR-1 | Isolated task worktrees promote declared files only. | High | Flow fixture |
+| FR-2 | Target acceptance is authoritative. | High | Flow fixture |
+
+## Non-Functional Requirements
+
+- NFR-1: Acceptance records are durable before tracking advances.
+- NFR-2: External target changes are preserved.
+EOF_REQ
+
+  local req_sha
+  req_sha="$(sha_file "$dir/spec/requirements.md")"
+  cat > "$dir/spec/design.md" <<EOF_DESIGN
+---
+spec: "flow"
+phase: design
+status: "complete"
+requirements_sha: "$req_sha"
+---
+
+# Design: flow
+
+## Coverage
+
+| Source | Design target |
+|---|---|
+| AC-1.1 | Acceptance Engine |
+| AC-1.2 | Acceptance Engine |
+| AC-1.3 | Acceptance Engine |
+| AC-1.4 | Acceptance Engine |
+| AC-1.5 | Acceptance Engine |
+| FR-1 | Attempt Workspace Manager |
+| FR-2 | Acceptance Engine |
+| NFR-1 | State Ledger |
+| NFR-2 | Acceptance Engine |
+EOF_DESIGN
+
+  local design_sha
+  design_sha="$(sha_file "$dir/spec/design.md")"
+  cat > "$dir/spec/tasks.md" <<EOF_TASKS
+---
+spec: "flow"
+phase: tasks
+status: "complete"
+requirements_sha: "$req_sha"
+design_sha: "$design_sha"
+---
+
+# Tasks: flow
+
+## Phase 1
+
+- [ ] 1.1 Write alpha
+  - **Do**: Write alpha output.
+  - **Files**: src/alpha.txt
+  - **Traces**: AC-1.1, AC-1.4, AC-1.5, FR-1, FR-2, NFR-1, NFR-2
+  - **model**: advanced
+  - **Cwd**: .
+  - **Done when**: Alpha file exists with expected bytes.
+  - **Verify**: test "\$(cat src/alpha.txt)" = alpha
+  - **Timeout**: 30
+  - **Commit**: feat: alpha
+
+- [ ] 1.2 Write beta
+  - **Do**: Write beta output.
+  - **Files**: src/tracked name.txt
+  - **Traces**: AC-1.2, FR-1, FR-2, NFR-1
+  - **model**: advanced
+  - **Cwd**: .
+  - **Done when**: Existing beta file is modified with expected bytes.
+  - **Verify**: test "\$(cat 'src/tracked name.txt')" = beta
+  - **Timeout**: 30
+  - **Commit**: feat: beta
+
+- [ ] V1 [VERIFY] Check final flow
+  - **Do**: Verify accepted task outputs.
+  - **Files**: none
+  - **Traces**: AC-1.3, FR-2, NFR-1
+  - **Cwd**: .
+  - **Done when**: Alpha and beta outputs are present.
+  - **Verify**: test "\$(cat src/alpha.txt)" = alpha && test "\$(cat 'src/tracked name.txt')" = beta
+  - **Timeout**: 30
+  - **Commit**: none
+EOF_TASKS
+  init_fixture_repo "$dir/repo"
 }
 
 approve_all() {
@@ -234,6 +375,23 @@ run_report() {
   kernel_json "$input" "$dir/report-$name.out" "$dir/report-$name.err"
 }
 
+run_accept() {
+  local dir="$1"
+  local name="$2"
+  local attempt_id="$3"
+  local input="$dir/accept-$name.json"
+  node -e '
+    const fs = require("fs");
+    fs.writeFileSync(process.argv[1], JSON.stringify({
+      op: "accept",
+      specDir: process.argv[2],
+      repoRoot: process.argv[3],
+      attemptId: process.argv[4]
+    }));
+  ' "$input" "$dir/spec" "$dir/repo" "$attempt_id"
+  kernel_json "$input" "$dir/accept-$name.out" "$dir/accept-$name.err"
+}
+
 json_get() {
   node -e 'const fs=require("fs"); const p=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); const path=process.argv[2].split("."); let v=p; for (const key of path) v=v[key]; process.stdout.write(String(v));' "$1" "$2"
 }
@@ -288,29 +446,43 @@ expect_invalid_mutation() {
   local needle="$2"
   local dir="$TMP_ROOT/$name"
   write_fixture "$dir"
+  local mutation_file before_sha
   case "$name" in
     missing-field)
+      mutation_file="$dir/spec/tasks.md"
+      before_sha="$(sha_file "$mutation_file")"
       perl -0pi -e 's/\n  - \*\*Verify\*\*: test -f src\/gate.txt//' "$dir/spec/tasks.md"
       ;;
     invalid-task-id)
+      mutation_file="$dir/spec/tasks.md"
+      before_sha="$(sha_file "$mutation_file")"
       perl -0pi -e 's/- \[ \] 1\.1 Create gate/- [ ] one Create gate/' "$dir/spec/tasks.md"
       ;;
     unknown-trace)
+      mutation_file="$dir/spec/tasks.md"
+      before_sha="$(sha_file "$mutation_file")"
       perl -0pi -e 's/AC-1\.1, FR-1, NFR-1/AC-9.9, FR-1, NFR-1/' "$dir/spec/tasks.md"
       ;;
     coverage-incomplete)
+      mutation_file="$dir/spec/design.md"
+      before_sha="$(sha_file "$mutation_file")"
       perl -0pi -e 's/\| NFR-1 \| Portable Protocol \|//' "$dir/spec/design.md"
       ;;
     stale-hash)
+      mutation_file="$dir/spec/tasks.md"
+      before_sha="$(sha_file "$mutation_file")"
       perl -0pi -e 's/design_sha: "[a-f0-9]{64}"/design_sha: "0000000000000000000000000000000000000000000000000000000000000000"/' "$dir/spec/tasks.md"
       ;;
     blocked-artifact)
+      mutation_file="$dir/spec/design.md"
+      before_sha="$(sha_file "$mutation_file")"
       perl -0pi -e 's/status: "complete"/status: "blocked"/' "$dir/spec/design.md"
       ;;
     *)
       fail "unknown mutation fixture: $name"
       ;;
   esac
+  assert_file_changed "$mutation_file" "$before_sha" "$name mutation"
   if [[ "$name" == "coverage-incomplete" || "$name" == "blocked-artifact" ]]; then
     local design_sha
     design_sha="$(sha_file "$dir/spec/design.md")"
@@ -608,9 +780,326 @@ ledger_poc() {
   assert_json_error_contains "$dir/recover.out" "recover is not implemented"
 }
 
+accept_code_task() {
+  local dir="$1"
+  local name="$2"
+  local expected_task="$3"
+  local rel_file="$4"
+  local value="$5"
+  run_next "$dir" "$name-next" || fail "$name next failed: $(cat "$dir/next-$name-next.err")"
+  assert_json_ok "$dir/next-$name-next.out"
+  local attempt task worktree
+  attempt="$(json_get "$dir/next-$name-next.out" "dispatch.attemptId")"
+  task="$(json_get "$dir/next-$name-next.out" "dispatch.taskId")"
+  worktree="$(json_get "$dir/next-$name-next.out" "dispatch.worktreePath")"
+  [[ "$task" == "$expected_task" ]] || fail "$name dispatched $task instead of $expected_task"
+  mkdir -p "$(dirname "$worktree/$rel_file")"
+  printf '%s\n' "$value" > "$worktree/$rel_file"
+  run_report "$dir" "$name-report" "$attempt" "$expected_task" "task_complete" "none" "started" "true" \
+    || fail "$name report failed: $(cat "$dir/report-$name-report.err")"
+  assert_json_ok "$dir/report-$name-report.out"
+  run_accept "$dir" "$name-accept" "$attempt" || fail "$name accept failed: $(cat "$dir/accept-$name-accept.err")"
+  assert_json_ok "$dir/accept-$name-accept.out"
+}
+
+flow_poc() {
+  local dir="$TMP_ROOT/flow"
+  write_flow_fixture "$dir"
+  approve_all "$dir"
+  run_preflight "$dir" || fail "flow preflight failed: $(cat "$dir/preflight.err")"
+  assert_json_ok "$dir/preflight.out"
+
+  accept_code_task "$dir" "alpha" "1.1" "src/alpha.txt" "alpha"
+  node -e '
+    const fs = require("fs");
+    const state = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    const alpha = state.taskStates["1.1"].acceptance;
+    if (state.currentTaskId !== "1.2" || state.currentStage !== "ready") process.exit(1);
+    if (!alpha || !alpha.commitOid || alpha.commitOid === "null" || !alpha.verifiedTree) process.exit(1);
+  ' "$dir/spec/.spec-drive-state.json" || fail "alpha acceptance not persisted"
+  grep -q '^- \[x\] 1\.1 Write alpha' "$dir/spec/tasks.md" || fail "alpha task checkbox was not projected"
+  grep -q '1.1: accepted' "$dir/spec/.progress.md" || fail "alpha progress was not projected"
+
+  accept_code_task "$dir" "beta" "1.2" "src/tracked name.txt" "beta"
+  node -e '
+    const fs = require("fs");
+    const state = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    const beta = state.taskStates["1.2"].acceptance;
+    if (state.currentTaskId !== "V1" || state.currentStage !== "ready") process.exit(1);
+    if (!beta || !beta.commitOid || !beta.verifiedTree) process.exit(1);
+  ' "$dir/spec/.spec-drive-state.json" || fail "beta acceptance not persisted"
+  grep -q '^- \[x\] 1\.2 Write beta' "$dir/spec/tasks.md" || fail "beta task checkbox was not projected"
+
+  local head_before_checkpoint
+  head_before_checkpoint="$(fixture_git "$dir/repo" rev-parse HEAD)"
+  run_next "$dir" "checkpoint-next" || fail "checkpoint next failed: $(cat "$dir/next-checkpoint-next.err")"
+  local checkpoint_attempt checkpoint_task
+  checkpoint_attempt="$(json_get "$dir/next-checkpoint-next.out" "dispatch.attemptId")"
+  checkpoint_task="$(json_get "$dir/next-checkpoint-next.out" "dispatch.taskId")"
+  [[ "$checkpoint_task" == "V1" ]] || fail "checkpoint dispatched $checkpoint_task instead of V1"
+  run_report "$dir" "checkpoint-report" "$checkpoint_attempt" "V1" "task_complete" "none" "started" "true" \
+    || fail "checkpoint report failed: $(cat "$dir/report-checkpoint-report.err")"
+  run_accept "$dir" "checkpoint-accept" "$checkpoint_attempt" \
+    || fail "checkpoint accept failed: $(cat "$dir/accept-checkpoint-accept.err")"
+  assert_json_ok "$dir/accept-checkpoint-accept.out"
+  [[ "$(fixture_git "$dir/repo" rev-parse HEAD)" == "$head_before_checkpoint" ]] || fail "checkpoint created a commit"
+  node -e '
+    const fs = require("fs");
+    const state = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    const checkpoint = state.taskStates.V1.acceptance;
+    if (state.currentTaskId !== null || state.currentStage !== "completed") process.exit(1);
+    if (!checkpoint || checkpoint.commitOid !== null || checkpoint.exitCode !== 0) process.exit(1);
+  ' "$dir/spec/.spec-drive-state.json" || fail "checkpoint acceptance mismatch"
+
+  local trailer_count
+  trailer_count="$(fixture_git "$dir/repo" log --format=%B | grep -c "Spec-Drive-Attempt")"
+  [[ "$trailer_count" == "2" ]] || fail "expected exactly two code commits with attempt trailers, got $trailer_count"
+  [[ "$(fixture_git "$dir/repo" rev-list --count HEAD)" == "3" ]] || fail "expected baseline plus two code commits"
+  [[ "$(cat "$dir/repo/src/alpha.txt")" == "alpha" ]] || fail "alpha target bytes mismatch"
+  [[ "$(cat "$dir/repo/src/tracked name.txt")" == "beta" ]] || fail "beta target bytes mismatch"
+
+  local signing="$TMP_ROOT/flow-signing-policy"
+  write_flow_fixture "$signing"
+  approve_all "$signing"
+  git -C "$signing/repo" config commit.gpgsign true
+  git -C "$signing/repo" config gpg.format openpgp
+  cat > "$signing/fake-gpg.sh" <<'EOF_GPG'
+#!/usr/bin/env bash
+echo fake signing program invoked >&2
+exit 42
+EOF_GPG
+  chmod +x "$signing/fake-gpg.sh"
+  git -C "$signing/repo" config gpg.program "$signing/fake-gpg.sh"
+  git -C "$signing/repo" config user.signingkey spec-drive-fixture@example.invalid
+  run_next "$signing" "sign-next" || fail "signing next failed: $(cat "$signing/next-sign-next.err")"
+  local sign_attempt sign_worktree
+  sign_attempt="$(json_get "$signing/next-sign-next.out" "dispatch.attemptId")"
+  sign_worktree="$(json_get "$signing/next-sign-next.out" "dispatch.worktreePath")"
+  mkdir -p "$sign_worktree/src"
+  printf 'alpha\n' > "$sign_worktree/src/alpha.txt"
+  run_report "$signing" "sign-report" "$sign_attempt" "1.1" "task_complete" "none" "started" "true" \
+    || fail "signing report failed: $(cat "$signing/report-sign-report.err")"
+  if run_accept "$signing" "sign-accept" "$sign_attempt"; then
+    fail "accept bypassed local commit signing policy"
+  fi
+  assert_json_error_contains "$signing/accept-sign-accept.out" "fake signing program invoked"
+
+  local metadata="$TMP_ROOT/flow-unrelated-metadata"
+  write_flow_fixture "$metadata"
+  approve_all "$metadata"
+  run_next "$metadata" "metadata-next" || fail "metadata next failed: $(cat "$metadata/next-metadata-next.err")"
+  local metadata_attempt metadata_worktree
+  metadata_attempt="$(json_get "$metadata/next-metadata-next.out" "dispatch.attemptId")"
+  metadata_worktree="$(json_get "$metadata/next-metadata-next.out" "dispatch.worktreePath")"
+  mkdir -p "$metadata_worktree/src" "$metadata/repo/.spec-drive"
+  printf 'alpha\n' > "$metadata_worktree/src/alpha.txt"
+  printf 'user bytes\n' > "$metadata/repo/.spec-drive/user.txt"
+  run_report "$metadata" "metadata-report" "$metadata_attempt" "1.1" "task_complete" "none" "started" "true" \
+    || fail "metadata report failed: $(cat "$metadata/report-metadata-report.err")"
+  if run_accept "$metadata" "metadata-accept" "$metadata_attempt"; then
+    fail "unrelated .spec-drive metadata was ignored"
+  fi
+  assert_json_error_contains "$metadata/accept-metadata-accept.out" ".spec-drive/user.txt"
+  [[ "$(cat "$metadata/repo/.spec-drive/user.txt")" == "user bytes" ]] || fail "unrelated metadata bytes were lost"
+
+  local lease_metadata="$TMP_ROOT/flow-unrelated-lease-metadata"
+  write_flow_fixture "$lease_metadata"
+  approve_all "$lease_metadata"
+  run_next "$lease_metadata" "lease-metadata-next" || fail "lease metadata next failed: $(cat "$lease_metadata/next-lease-metadata-next.err")"
+  local lease_metadata_attempt lease_metadata_worktree lease_metadata_run
+  lease_metadata_attempt="$(json_get "$lease_metadata/next-lease-metadata-next.out" "dispatch.attemptId")"
+  lease_metadata_worktree="$(json_get "$lease_metadata/next-lease-metadata-next.out" "dispatch.worktreePath")"
+  lease_metadata_run="$(json_get "$lease_metadata/spec/.spec-drive-state.json" "runId")"
+  mkdir -p "$lease_metadata_worktree/src" "$lease_metadata/repo/.spec-drive/kernel/leases/$lease_metadata_run"
+  printf 'alpha\n' > "$lease_metadata_worktree/src/alpha.txt"
+  printf 'user bytes\n' > "$lease_metadata/repo/.spec-drive/kernel/leases/$lease_metadata_run/user.txt"
+  run_report "$lease_metadata" "lease-metadata-report" "$lease_metadata_attempt" "1.1" "task_complete" "none" "started" "true" \
+    || fail "lease metadata report failed: $(cat "$lease_metadata/report-lease-metadata-report.err")"
+  if run_accept "$lease_metadata" "lease-metadata-accept" "$lease_metadata_attempt"; then
+    fail "unrelated lease-directory metadata was ignored"
+  fi
+  assert_json_error_contains "$lease_metadata/accept-lease-metadata-accept.out" ".spec-drive/kernel/leases/$lease_metadata_run/user.txt"
+  [[ "$(cat "$lease_metadata/repo/.spec-drive/kernel/leases/$lease_metadata_run/user.txt")" == "user bytes" ]] || fail "unrelated lease metadata bytes were lost"
+
+  local locked="$TMP_ROOT/flow-promotion-locked"
+  write_flow_fixture "$locked"
+  approve_all "$locked"
+  run_next "$locked" "locked-next" || fail "locked next failed: $(cat "$locked/next-locked-next.err")"
+  local locked_attempt locked_worktree locked_run
+  locked_attempt="$(json_get "$locked/next-locked-next.out" "dispatch.attemptId")"
+  locked_worktree="$(json_get "$locked/next-locked-next.out" "dispatch.worktreePath")"
+  locked_run="$(json_get "$locked/spec/.spec-drive-state.json" "runId")"
+  mkdir -p "$locked_worktree/src" "$locked/repo/.spec-drive/kernel/locks/promotion.lock"
+  printf '{"runId":"foreign-run","specDir":"foreign-spec"}\n' > "$locked/repo/.spec-drive/kernel/locks/promotion.lock/owner.json"
+  [[ "$locked_run" != "foreign-run" ]] || fail "lock fixture did not use distinct run identity"
+  [[ ! -e "$locked/repo/.spec-drive/kernel/locks/$locked_run/promotion.lock" ]] || fail "promotion lock remained run-scoped"
+  printf 'alpha\n' > "$locked_worktree/src/alpha.txt"
+  run_report "$locked" "locked-report" "$locked_attempt" "1.1" "task_complete" "none" "started" "true" \
+    || fail "locked report failed: $(cat "$locked/report-locked-report.err")"
+  if run_accept "$locked" "locked-accept" "$locked_attempt"; then
+    fail "held cooperative promotion lock did not block"
+  fi
+  assert_json_error_contains "$locked/accept-locked-accept.out" "promotion lock is held"
+  [[ ! -e "$locked/repo/src/alpha.txt" ]] || fail "held lock allowed target mutation"
+
+  local projection="$TMP_ROOT/flow-projection-fail"
+  write_flow_fixture "$projection"
+  approve_all "$projection"
+  run_next "$projection" "projection-next" || fail "projection next failed: $(cat "$projection/next-projection-next.err")"
+  local projection_attempt projection_worktree
+  projection_attempt="$(json_get "$projection/next-projection-next.out" "dispatch.attemptId")"
+  projection_worktree="$(json_get "$projection/next-projection-next.out" "dispatch.worktreePath")"
+  mkdir -p "$projection_worktree/src" "$projection/spec/.progress.md"
+  printf 'alpha\n' > "$projection_worktree/src/alpha.txt"
+  run_report "$projection" "projection-report" "$projection_attempt" "1.1" "task_complete" "none" "started" "true" \
+    || fail "projection report failed: $(cat "$projection/report-projection-report.err")"
+  if run_accept "$projection" "projection-accept" "$projection_attempt"; then
+    fail "projection failure did not block closure"
+  fi
+  node -e '
+    const fs = require("fs");
+    const state = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    const task = state.taskStates["1.1"];
+    if (task.status !== "accepted" || !task.acceptance || state.currentTaskId !== "1.1") process.exit(1);
+    if (state.attempts[process.argv[2]].promotion.stage !== "accepted_recorded") process.exit(1);
+  ' "$projection/spec/.spec-drive-state.json" "$projection_attempt" || fail "projection failure did not preserve accepted record before tracking"
+  if run_next "$projection" "after-projection-fail"; then
+    fail "next advanced after interrupted projection"
+  fi
+  assert_json_error_contains "$projection/next-after-projection-fail.out" "requires recovery"
+
+  local false="$TMP_ROOT/flow-false-complete"
+  write_flow_fixture "$false"
+  approve_all "$false"
+  run_next "$false" "false-next" || fail "false next failed: $(cat "$false/next-false-next.err")"
+  local false_attempt
+  false_attempt="$(json_get "$false/next-false-next.out" "dispatch.attemptId")"
+  run_report "$false" "false-report" "$false_attempt" "1.1" "task_complete" "none" "started" "true" \
+    || fail "false report failed: $(cat "$false/report-false-report.err")"
+  if run_accept "$false" "false-accept" "$false_attempt"; then
+    fail "false completion bypassed authoritative Verify"
+  fi
+  assert_json_error_contains "$false/accept-false-accept.out" "Verify failed"
+  node -e '
+    const fs = require("fs");
+    const state = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    if (state.taskStates["1.1"].status === "accepted") process.exit(1);
+  ' "$false/spec/.spec-drive-state.json" || fail "false completion was accepted"
+
+  local verify_fail="$TMP_ROOT/flow-verify-fail"
+  write_flow_fixture "$verify_fail"
+  approve_all "$verify_fail"
+  run_next "$verify_fail" "bad-next" || fail "bad next failed: $(cat "$verify_fail/next-bad-next.err")"
+  local bad_attempt bad_worktree
+  bad_attempt="$(json_get "$verify_fail/next-bad-next.out" "dispatch.attemptId")"
+  bad_worktree="$(json_get "$verify_fail/next-bad-next.out" "dispatch.worktreePath")"
+  mkdir -p "$bad_worktree/src"
+  printf 'wrong\n' > "$bad_worktree/src/alpha.txt"
+  run_report "$verify_fail" "bad-report" "$bad_attempt" "1.1" "task_complete" "none" "started" "true" \
+    || fail "bad report failed: $(cat "$verify_fail/report-bad-report.err")"
+  if run_accept "$verify_fail" "bad-accept" "$bad_attempt"; then
+    fail "bad implementation passed authoritative Verify"
+  fi
+  assert_json_error_contains "$verify_fail/accept-bad-accept.out" "Verify failed"
+  [[ ! -e "$verify_fail/repo/src/alpha.txt" ]] || fail "failed Verify promoted target code"
+
+  local outside_files="$TMP_ROOT/flow-outside-files"
+  write_flow_fixture "$outside_files"
+  approve_all "$outside_files"
+  run_next "$outside_files" "outside-next" || fail "outside next failed: $(cat "$outside_files/next-outside-next.err")"
+  local outside_attempt outside_worktree
+  outside_attempt="$(json_get "$outside_files/next-outside-next.out" "dispatch.attemptId")"
+  outside_worktree="$(json_get "$outside_files/next-outside-next.out" "dispatch.worktreePath")"
+  mkdir -p "$outside_worktree/src"
+  printf 'alpha\n' > "$outside_worktree/src/alpha.txt"
+  printf 'outside\n' > "$outside_worktree/src/outside.txt"
+  run_report "$outside_files" "outside-report" "$outside_attempt" "1.1" "task_complete" "none" "started" "true" \
+    || fail "outside report failed: $(cat "$outside_files/report-outside-report.err")"
+  if run_accept "$outside_files" "outside-accept" "$outside_attempt"; then
+    fail "outside Files mutation was accepted"
+  fi
+  assert_json_error_contains "$outside_files/accept-outside-accept.out" "outside declared Files"
+  [[ ! -e "$outside_files/repo/src/alpha.txt" ]] || fail "outside Files rejection promoted target alpha"
+  [[ ! -e "$outside_files/repo/src/outside.txt" ]] || fail "outside Files rejection promoted target outside file"
+
+  local dirty="$TMP_ROOT/flow-dirty-target"
+  write_flow_fixture "$dirty"
+  approve_all "$dirty"
+  run_next "$dirty" "dirty-next" || fail "dirty next failed: $(cat "$dirty/next-dirty-next.err")"
+  local dirty_attempt dirty_worktree
+  dirty_attempt="$(json_get "$dirty/next-dirty-next.out" "dispatch.attemptId")"
+  dirty_worktree="$(json_get "$dirty/next-dirty-next.out" "dispatch.worktreePath")"
+  mkdir -p "$dirty_worktree/src" "$dirty/repo/src"
+  printf 'alpha\n' > "$dirty_worktree/src/alpha.txt"
+  run_report "$dirty" "dirty-report" "$dirty_attempt" "1.1" "task_complete" "none" "started" "true" \
+    || fail "dirty report failed: $(cat "$dirty/report-dirty-report.err")"
+  printf 'external bytes\n' > "$dirty/repo/src/external.txt"
+  if run_accept "$dirty" "dirty-accept" "$dirty_attempt"; then
+    fail "dirty target was accepted"
+  fi
+  assert_json_error_contains "$dirty/accept-dirty-accept.out" "external changes"
+  [[ "$(cat "$dirty/repo/src/external.txt")" == "external bytes" ]] || fail "dirty target bytes were lost"
+  [[ ! -e "$dirty/repo/src/alpha.txt" ]] || fail "dirty target received promoted alpha despite rejection"
+
+  local target_mutation="$TMP_ROOT/flow-target-verify-mutation"
+  write_flow_fixture "$target_mutation"
+  before_sha="$(sha_file "$target_mutation/spec/tasks.md")"
+  perl -0pi -e 's#test "\$\(cat src/alpha.txt\)" = alpha#node -e '"'"'fs=require("fs"),fs.existsSync("../spec")&&fs.writeFileSync("src/alpha.txt","mutated\\n")'"'"'#' "$target_mutation/spec/tasks.md"
+  assert_file_changed "$target_mutation/spec/tasks.md" "$before_sha" "target Verify mutation"
+  approve_all "$target_mutation"
+  run_next "$target_mutation" "target-mut-next" || fail "target mutation next failed: $(cat "$target_mutation/next-target-mut-next.err")"
+  local target_mut_attempt target_mut_worktree
+  target_mut_attempt="$(json_get "$target_mutation/next-target-mut-next.out" "dispatch.attemptId")"
+  target_mut_worktree="$(json_get "$target_mutation/next-target-mut-next.out" "dispatch.worktreePath")"
+  mkdir -p "$target_mut_worktree/src"
+  printf 'alpha\n' > "$target_mut_worktree/src/alpha.txt"
+  run_report "$target_mutation" "target-mut-report" "$target_mut_attempt" "1.1" "task_complete" "none" "started" "true" \
+    || fail "target mutation report failed: $(cat "$target_mutation/report-target-mut-report.err")"
+  if run_accept "$target_mutation" "target-mut-accept" "$target_mut_attempt"; then
+    fail "target Verify mutation was accepted"
+  fi
+  assert_json_error_contains "$target_mutation/accept-target-mut-accept.out" "target Verify mutated candidate tree"
+  [[ "$(cat "$target_mutation/repo/src/alpha.txt")" == "mutated" ]] || fail "target Verify mutation was rolled back or lost"
+
+  local checkpoint_mutation="$TMP_ROOT/flow-checkpoint-verify-mutation"
+  write_flow_fixture "$checkpoint_mutation"
+  before_sha="$(sha_file "$checkpoint_mutation/spec/tasks.md")"
+  node -e '
+    const fs = require("fs");
+    const file = process.argv[1];
+    const before = fs.readFileSync(file, "utf8");
+    const after = before.replace(
+      `test "$(cat src/alpha.txt)" = alpha && test "$(cat '"'"'src/tracked name.txt'"'"')" = beta`,
+      `node -e '"'"'require("fs").writeFileSync("src/tracked name.txt","checkpoint-mutated\\n")'"'"'`
+    );
+    fs.writeFileSync(file, after);
+  ' "$checkpoint_mutation/spec/tasks.md"
+  assert_file_changed "$checkpoint_mutation/spec/tasks.md" "$before_sha" "checkpoint Verify mutation"
+  approve_all "$checkpoint_mutation"
+  accept_code_task "$checkpoint_mutation" "checkpoint-mut-alpha" "1.1" "src/alpha.txt" "alpha"
+  accept_code_task "$checkpoint_mutation" "checkpoint-mut-beta" "1.2" "src/tracked name.txt" "beta"
+  run_next "$checkpoint_mutation" "checkpoint-mut-next" || fail "checkpoint mutation next failed: $(cat "$checkpoint_mutation/next-checkpoint-mut-next.err")"
+  local checkpoint_mut_attempt
+  checkpoint_mut_attempt="$(json_get "$checkpoint_mutation/next-checkpoint-mut-next.out" "dispatch.attemptId")"
+  run_report "$checkpoint_mutation" "checkpoint-mut-report" "$checkpoint_mut_attempt" "V1" "task_complete" "none" "started" "true" \
+    || fail "checkpoint mutation report failed: $(cat "$checkpoint_mutation/report-checkpoint-mut-report.err")"
+  if run_accept "$checkpoint_mutation" "checkpoint-mut-accept" "$checkpoint_mut_attempt"; then
+    fail "checkpoint Verify mutation was accepted"
+  fi
+  assert_json_error_contains "$checkpoint_mutation/accept-checkpoint-mut-accept.out" "target Verify mutated candidate tree"
+  [[ "$(cat "$checkpoint_mutation/repo/src/tracked name.txt")" == "checkpoint-mutated" ]] || fail "checkpoint mutation bytes were not preserved"
+
+  node -e 'const fs=require("fs"); fs.writeFileSync(process.argv[1], JSON.stringify({op:"recover", specDir:process.argv[2], attemptId:"missing", evidence:"fixture"}));' "$dir/recover-flow.json" "$dir/spec"
+  if kernel_json "$dir/recover-flow.json" "$dir/recover-flow.out" "$dir/recover-flow.err"; then
+    fail "flow recover unexpectedly succeeded"
+  fi
+  assert_json_error_contains "$dir/recover-flow.out" "recover is not implemented"
+}
+
 all() {
   gate_poc
   ledger_poc
+  flow_poc
 }
 
 if [[ $# -eq 0 ]]; then
@@ -621,6 +1110,7 @@ for mode in "$@"; do
   case "$mode" in
     gate-poc) gate_poc ;;
     ledger-poc) ledger_poc ;;
+    flow-poc) flow_poc ;;
     all) all ;;
     *) fail "unknown mode: $mode" ;;
   esac

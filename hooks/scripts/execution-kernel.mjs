@@ -1,17 +1,25 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
+import { mkdtempSync } from "node:fs";
 import {
   closeSync,
   existsSync,
   fsyncSync,
+  lstatSync,
   mkdirSync,
   openSync,
+  readdirSync,
+  readlinkSync,
+  realpathSync,
   readFileSync,
   renameSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 
 const STATE_FILE = ".spec-drive-state.json";
 const ARTIFACTS = {
@@ -58,6 +66,18 @@ function artifactError(detail, extra) {
 
 function requestError(detail, extra) {
   return new KernelFailure("request_error", detail, extra);
+}
+
+function executionError(detail, extra) {
+  return new KernelFailure("execution_error", detail, extra);
+}
+
+function externalChangeError(detail, extra) {
+  return new KernelFailure("external_change_error", detail, extra);
+}
+
+function acceptanceError(detail, extra) {
+  return new KernelFailure("acceptance_error", detail, extra);
 }
 
 function diagnostic(message) {
@@ -199,6 +219,68 @@ function withStateLock(specDir, fn) {
     return fn();
   } finally {
     rmSync(lock, { recursive: true, force: true });
+  }
+}
+
+function repoPromotionLockPath(repoRoot) {
+  return path.join(repoRoot, ".spec-drive", "kernel", "locks", "promotion.lock");
+}
+
+function withRepoPromotionLock(repoRoot, state, fn) {
+  const lock = repoPromotionLockPath(repoRoot);
+  mkdirSync(path.dirname(lock), { recursive: true });
+  try {
+    mkdirSync(lock, { mode: 0o700 });
+  } catch (error) {
+    if (error.code === "EEXIST") {
+      throw externalChangeError("target repo cooperative promotion lock is held", { lock });
+    }
+    throw externalChangeError(`cannot establish target repo cooperative promotion lock: ${error.message}`, { lock });
+  }
+  try {
+    return fn();
+  } finally {
+    rmSync(lock, { recursive: true, force: true });
+  }
+}
+
+function leasePath(repoRoot, state, taskId) {
+  return path.join(repoRoot, ".spec-drive", "kernel", "leases", state.runId, `${taskId}.json`);
+}
+
+function writeTaskLease(repoRoot, state, task, attempt) {
+  const file = leasePath(repoRoot, state, task.taskId);
+  mkdirSync(path.dirname(file), { recursive: true });
+  if (existsSync(file)) {
+    const existing = JSON.parse(readFileSync(file, "utf8"));
+    if (existing.attemptId !== attempt.attemptId || existing.taskId !== task.taskId || existing.runId !== state.runId) {
+      const previous = state.attempts?.[existing.attemptId];
+      const ledgerAllowsReplacement = state.activeAttemptId !== existing.attemptId && state.currentStage === "ready";
+      if (!previous || (!["abandoned", "reported_blocked"].includes(previous.state) && !ledgerAllowsReplacement)) {
+        throw externalChangeError("task already has a cooperative execution lease", { lease: file });
+      }
+      rmSync(file, { force: true });
+    } else {
+      return;
+    }
+  }
+  writeFileSync(file, `${JSON.stringify({
+    runId: state.runId,
+    taskId: task.taskId,
+    attemptId: attempt.attemptId,
+    targetHeadAtCreate: attempt.worktree.targetHeadAtCreate,
+    createdAt: new Date().toISOString(),
+  }, null, 2)}\n`);
+}
+
+function requireTaskLease(repoRoot, state, task, attempt) {
+  const file = leasePath(repoRoot, state, task.taskId);
+  if (!existsSync(file)) {
+    throw externalChangeError("missing cooperative execution lease", { lease: file });
+  }
+  const lease = JSON.parse(readFileSync(file, "utf8"));
+  if (lease.runId !== state.runId || lease.taskId !== task.taskId || lease.attemptId !== attempt.attemptId) {
+    throw externalChangeError("cooperative execution lease does not match attempt", { lease: file });
   }
 }
 
@@ -499,6 +581,350 @@ function validateRelativePath(repoRoot, relPath, taskId, fieldName) {
   }
 }
 
+function runGit(repoRoot, args, options = {}) {
+  const result = spawnSync("git", ["-C", repoRoot, ...args], {
+    encoding: options.encoding || "utf8",
+    env: { ...process.env, ...(options.env || {}) },
+    maxBuffer: 10 * 1024 * 1024,
+  });
+  if (result.error) {
+    throw executionError(`git failed to start: ${result.error.message}`, { repoRoot, args });
+  }
+  if (result.status !== 0) {
+    const detail = String(result.stderr || result.stdout || "").trim() || `git exited ${result.status}`;
+    throw new KernelFailure(options.errorCode || "acceptance_error", detail, { repoRoot, args });
+  }
+  if (options.raw) return result.stdout || (options.encoding === "buffer" ? Buffer.alloc(0) : "");
+  return String(result.stdout || "").replace(/\r?\n$/, "");
+}
+
+function gitOptional(repoRoot, args) {
+  const result = spawnSync("git", ["-C", repoRoot, ...args], {
+    encoding: "utf8",
+    env: { ...process.env },
+    maxBuffer: 10 * 1024 * 1024,
+  });
+  return {
+    ok: result.status === 0,
+    stdout: (result.stdout || "").replace(/\r?\n$/, ""),
+    stderr: (result.stderr || "").trim(),
+  };
+}
+
+function requireGitRepo(repoRoot) {
+  const inside = gitOptional(repoRoot, ["rev-parse", "--is-inside-work-tree"]);
+  if (!inside.ok || inside.stdout !== "true") {
+    throw artifactError("repoRoot must be a Git worktree for execution", { artifact: "repoRoot", repoRoot });
+  }
+}
+
+function parsePorcelainZ(output) {
+  const entries = String(output || "").split("\0");
+  const paths = [];
+  for (let index = 0; index < entries.length; index += 1) {
+    const entry = entries[index];
+    if (!entry) continue;
+    const status = entry.slice(0, 2);
+    const relPath = entry.slice(3);
+    if (!relPath) continue;
+    paths.push(relPath);
+    if (status.includes("R") || status.includes("C")) {
+      const source = entries[index + 1];
+      if (source) paths.push(source);
+      index += 1;
+    }
+  }
+  return [...new Set(paths)];
+}
+
+function knownOwnedMetadataPaths(state = {}, taskId = null) {
+  const paths = new Set([".spec-drive/kernel/locks/promotion.lock"]);
+  if (!state.runId) return paths;
+  const knownTaskIds = new Set();
+  if (taskId) knownTaskIds.add(taskId);
+  for (const knownTaskId of Object.keys(state.taskStates || {})) {
+    const taskState = state.taskStates[knownTaskId];
+    if (taskState?.latestAttemptId || taskState?.acceptance || (taskState?.attempts || []).length) {
+      knownTaskIds.add(knownTaskId);
+    }
+  }
+  for (const attempt of Object.values(state.attempts || {})) {
+    if (attempt?.taskId) knownTaskIds.add(attempt.taskId);
+  }
+  for (const knownTaskId of knownTaskIds) {
+    paths.add(`.spec-drive/worktrees/${state.runId}/${knownTaskId}`);
+    paths.add(`.spec-drive/kernel/leases/${state.runId}/${knownTaskId}.json`);
+  }
+  return paths;
+}
+
+function isOwnedKernelMetadataPath(relPath, state = {}, taskId = null) {
+  for (const owned of knownOwnedMetadataPaths(state, taskId)) {
+    if (relPath === owned || (owned.includes("/worktrees/") && relPath.startsWith(`${owned}/`))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function assertFilesDoNotOverlapOwnedMetadata(task, state) {
+  for (const file of task.files || []) {
+    if (isOwnedKernelMetadataPath(file, state, task.taskId)) {
+      throw artifactError("Files may not overlap kernel-owned metadata", { taskId: task.taskId, path: file });
+    }
+  }
+}
+
+function repoStatusPaths(repoRoot, { ignoreOwnedMetadata = false, state = {}, taskId = null } = {}) {
+  const output = runGit(repoRoot, ["status", "--porcelain=v1", "-z", "--untracked-files=all"], {
+    errorCode: "external_change_error",
+    raw: true,
+  });
+  return parsePorcelainZ(output).filter(
+    (relPath) => !(ignoreOwnedMetadata && isOwnedKernelMetadataPath(relPath, state, taskId)),
+  );
+}
+
+function requireTargetClean(repoRoot, state = {}, taskId = null) {
+  const dirty = repoStatusPaths(repoRoot, { ignoreOwnedMetadata: true, state, taskId });
+  if (dirty.length) {
+    throw externalChangeError("target repo has external changes", { dirtyPaths: dirty });
+  }
+}
+
+function assertCwdContained(root, cwd, label) {
+  const resolvedRoot = realpathSync(root);
+  const resolvedCwd = realpathSync(cwd);
+  if (resolvedCwd !== resolvedRoot && !resolvedCwd.startsWith(`${resolvedRoot}${path.sep}`)) {
+    throw acceptanceError(`${label} cwd escapes worktree`, { cwd: resolvedCwd, root: resolvedRoot });
+  }
+  if (!existsSync(resolvedCwd)) {
+    throw acceptanceError(`${label} cwd does not exist`, { cwd: resolvedCwd });
+  }
+}
+
+function ensureWorktree(repoRoot, state, task) {
+  requireGitRepo(repoRoot);
+  assertFilesDoNotOverlapOwnedMetadata(task, state);
+  requireTargetClean(repoRoot, state, task.taskId);
+  const worktreePath = path.join(repoRoot, ".spec-drive", "worktrees", state.runId, task.taskId);
+  const branch = `spec-drive/${state.runId}/${task.taskId}`;
+  const targetHead = runGit(repoRoot, ["rev-parse", "HEAD"], { errorCode: "external_change_error" });
+  mkdirSync(path.dirname(worktreePath), { recursive: true });
+  if (!existsSync(worktreePath)) {
+    const branchExists = gitOptional(repoRoot, ["rev-parse", "--verify", "--quiet", branch]);
+    const args = branchExists.ok
+      ? ["worktree", "add", worktreePath, branch]
+      : ["worktree", "add", "-b", branch, worktreePath, targetHead];
+    runGit(repoRoot, args, { errorCode: "external_change_error" });
+  }
+  return { worktreePath, branch, targetHead };
+}
+
+function taskById(tasks, taskId) {
+  return tasks.find((task) => task.taskId === taskId) || null;
+}
+
+function assertAttemptFilesOnly(worktreePath, task) {
+  const allowed = new Set(task.taskType === "verify" ? [] : task.files);
+  const changed = repoStatusPaths(worktreePath);
+  const outside = changed.filter((relPath) => !allowed.has(relPath));
+  if (outside.length) {
+    throw acceptanceError("attempt changed files outside declared Files", {
+      taskId: task.taskId,
+      changedPaths: changed,
+      outsidePaths: outside,
+    });
+  }
+  if (task.taskType === "verify" && changed.length) {
+    throw acceptanceError("checkpoint attempt must not change code", { taskId: task.taskId, changedPaths: changed });
+  }
+  return changed;
+}
+
+function contentManifest(root, files) {
+  const manifest = {};
+  for (const relPath of files) {
+    const filePath = path.join(root, relPath);
+    if (!existsSync(filePath)) {
+      manifest[relPath] = null;
+      continue;
+    }
+    const bytes = readFileSync(filePath);
+    manifest[relPath] = { sha256: sha256(bytes), bytes: bytes.length };
+  }
+  return manifest;
+}
+
+function listTrackedFiles(root) {
+  const output = runGit(root, ["ls-files", "-z"], { errorCode: "acceptance_error", raw: true });
+  return String(output || "").split("\0").filter(Boolean);
+}
+
+function completeCandidateManifest(root, state = {}, taskId = null) {
+  const tracked = new Set(listTrackedFiles(root));
+  const stack = [root];
+  while (stack.length) {
+    const current = stack.pop();
+    for (const name of readdirSync(current)) {
+      if (current === root && name === ".git") continue;
+      const abs = path.join(current, name);
+      const rel = path.relative(root, abs).split(path.sep).join("/");
+      if (isOwnedKernelMetadataPath(rel, state, taskId)) continue;
+      const st = lstatSync(abs);
+      if (st.isSymbolicLink()) {
+        tracked.add(rel);
+      } else if (st.isDirectory()) {
+        stack.push(abs);
+      } else if (st.isFile()) {
+        tracked.add(rel);
+      }
+    }
+  }
+  const manifest = {};
+  for (const relPath of [...tracked].sort()) {
+    if (isOwnedKernelMetadataPath(relPath, state, taskId)) continue;
+    const filePath = path.join(root, relPath);
+    if (!existsSync(filePath)) {
+      manifest[relPath] = null;
+      continue;
+    }
+    const st = lstatSync(filePath);
+    if (st.isSymbolicLink()) {
+      manifest[relPath] = { mode: "symlink", target: readlinkSync(filePath) };
+    } else if (st.isFile()) {
+      const bytes = readFileSync(filePath);
+      manifest[relPath] = { mode: (statSync(filePath).mode & 0o777).toString(8), sha256: sha256(bytes), bytes: bytes.length };
+    }
+  }
+  return manifest;
+}
+
+function sameJson(left, right) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function runVerify(command, cwd, timeoutSec) {
+  const result = spawnSync(command, {
+    cwd,
+    shell: true,
+    encoding: "utf8",
+    timeout: timeoutSec * 1000,
+    killSignal: "SIGTERM",
+    maxBuffer: 10 * 1024 * 1024,
+  });
+  return {
+    command,
+    cwd,
+    timeoutSec,
+    exitCode: result.status === null ? 124 : result.status,
+    timedOut: result.error?.code === "ETIMEDOUT",
+    stdout: (result.stdout || "").slice(-4000),
+    stderr: (result.stderr || "").slice(-4000),
+  };
+}
+
+function headAndIndexState(root) {
+  return {
+    head: runGit(root, ["rev-parse", "HEAD"], { errorCode: "acceptance_error" }),
+    index: runGit(root, ["write-tree"], { errorCode: "acceptance_error" }),
+  };
+}
+
+function runAuthoritativeVerify(root, task, cwdRel, label, state = {}) {
+  const cwd = path.resolve(root, cwdRel);
+  assertCwdContained(root, cwd, label);
+  const before = completeCandidateManifest(root, state, task.taskId);
+  const gitBefore = headAndIndexState(root);
+  const record = runVerify(task.fields.Verify, cwd, task.timeoutSec);
+  const after = completeCandidateManifest(root, state, task.taskId);
+  const gitAfter = headAndIndexState(root);
+  if (record.timedOut) {
+    throw acceptanceError(`${label} Verify timed out`, { verify: record });
+  }
+  if (record.exitCode !== 0) {
+    throw acceptanceError(`${label} Verify failed`, { verify: record });
+  }
+  if (!sameJson(before, after)) {
+    throw acceptanceError(`${label} Verify mutated candidate tree`, { before, after, verify: record });
+  }
+  if (!sameJson(gitBefore, gitAfter)) {
+    throw acceptanceError(`${label} Verify mutated HEAD or index`, { before: gitBefore, after: gitAfter, verify: record });
+  }
+  return record;
+}
+
+function treeFromDeclaredFiles(worktreePath, files) {
+  mkdirSync(path.join(worktreePath, ".spec-drive", "kernel"), { recursive: true });
+  const indexDir = mkdtempSync(path.join(worktreePath, ".spec-drive", "kernel", "tmp-index-"));
+  const indexPath = path.join(indexDir, "index");
+  const env = { GIT_INDEX_FILE: indexPath };
+  runGit(worktreePath, ["read-tree", "HEAD"], { env });
+  if (files.length) {
+    runGit(worktreePath, ["add", "--", ...files], { env });
+  }
+  const tree = runGit(worktreePath, ["write-tree"], { env });
+  rmSync(indexDir, { recursive: true, force: true });
+  return tree;
+}
+
+function applyTreeDiff(targetRepoPath, baseCommit, tree) {
+  const diff = spawnSync("git", ["-C", targetRepoPath, "diff", "--binary", baseCommit, tree], {
+    encoding: "buffer",
+    env: { ...process.env },
+    maxBuffer: 20 * 1024 * 1024,
+  });
+  if (diff.error || diff.status !== 0) {
+    throw acceptanceError("failed to compute promotion diff", {
+      detail: diff.error?.message || diff.stderr?.toString("utf8") || "git diff failed",
+    });
+  }
+  const apply = spawnSync("git", ["-C", targetRepoPath, "apply", "--binary", "--index"], {
+    input: diff.stdout,
+    encoding: "buffer",
+    env: { ...process.env },
+    maxBuffer: 20 * 1024 * 1024,
+  });
+  if (apply.error || apply.status !== 0) {
+    throw acceptanceError("failed to apply promotion diff", {
+      detail: apply.error?.message || apply.stderr?.toString("utf8") || "git apply failed",
+    });
+  }
+}
+
+function replaceTaskCheckbox(tasksText, taskId) {
+  const escaped = taskId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(`^(\\s*-\\s*\\[) \\](\\s+${escaped}\\b)`, "m");
+  if (!re.test(tasksText)) {
+    if (new RegExp(`^\\s*-\\s*\\[[xX]\\]\\s+${escaped}\\b`, "m").test(tasksText)) return tasksText;
+    throw acceptanceError("could not project accepted task checkbox", { taskId });
+  }
+  return tasksText.replace(re, "$1x]$2");
+}
+
+function progressPath(specDir) {
+  return path.join(specDir, ".progress.md");
+}
+
+function projectTracking(specDir, state, tasks, taskId, acceptance) {
+  const tasksFile = path.join(specDir, ARTIFACTS.tasks);
+  const updatedTasks = replaceTaskCheckbox(readFileSync(tasksFile, "utf8"), taskId);
+  writeFileSync(tasksFile, updatedTasks);
+  const progressFile = progressPath(specDir);
+  const acceptedCount = tasks.filter((task) => task.taskId === taskId || getTaskState(state, task.taskId)?.status === "accepted").length;
+  const line = `- ${taskId}: accepted ${acceptance.acceptedAt}${acceptance.commitOid ? ` ${acceptance.commitOid}` : " checkpoint"}\n`;
+  const previous = existsSync(progressFile) ? readFileSync(progressFile, "utf8") : "# Progress\n\n";
+  const header = previous.includes("Accepted tasks:") ? previous : `${previous.replace(/\s*$/, "\n\n")}Accepted tasks:\n`;
+  writeFileSync(progressFile, `${header.replace(new RegExp(`^- ${taskId}:.*\\n`, "m"), "")}${line}`);
+  state.trackingProjection = {
+    tasksFile,
+    progressFile,
+    acceptedCount,
+    totalTasks: tasks.length,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
 function validateTask(task, repoRoot, knownTraces) {
   for (const field of REQUIRED_FIELDS) {
     if (!Object.hasOwn(task.fields, field) || task.fields[field].trim() === "") {
@@ -520,11 +946,12 @@ function validateTask(task, repoRoot, knownTraces) {
   if (!existsSync(cwd)) {
     throw artifactError(`Cwd does not exist: ${task.fields.Cwd.trim()}`, { taskId: task.taskId });
   }
-  const files = parseList(task.fields.Files);
+  let files = parseList(task.fields.Files);
   if (task.taskType === "verify") {
     if (task.fields.Files.trim() !== "none" || task.fields.Commit.trim() !== "none") {
       throw artifactError("checkpoint tasks must declare Files=none and Commit=none", { taskId: task.taskId });
     }
+    files = [];
   } else if (task.fields.Files.trim() === "none") {
     throw artifactError("Files=none is only valid for checkpoints", { taskId: task.taskId });
   } else {
@@ -741,6 +1168,13 @@ function nextTask(tasks, state) {
   return tasks.find((task) => getTaskState(state, task.taskId)?.status !== "accepted") || null;
 }
 
+function interruptedPromotionAttempt(state) {
+  return Object.values(state.attempts || {}).find((attempt) => {
+    const stage = attempt?.promotion?.stage;
+    return stage && stage !== "tracking_updated";
+  }) || null;
+}
+
 function next(request) {
   const specDir = resolveSpecDir(requireString(request, "specDir"));
   const repoRoot = path.resolve(requireString(request, "repoRoot"));
@@ -752,11 +1186,19 @@ function next(request) {
     const { tasksArtifact, tasks, state } = loadValidatedPlan(specDir, repoRoot);
     initializeFreshStateMetadata(state, specDir, "execution");
     ensureLedger(state, tasks, tasksArtifact.hash);
+    const interrupted = interruptedPromotionAttempt(state);
+    if (interrupted) {
+      throw requestError("unsupported in-progress promotion state requires recovery", {
+        taskId: interrupted.taskId,
+        attemptId: interrupted.attemptId,
+        stage: interrupted.promotion.stage,
+      });
+    }
     if (state.currentStage === "reported_complete") {
-      throw requestError("task is awaiting authoritative acceptance; accept is not implemented until task 1.3", {
+      throw requestError("task is awaiting authoritative acceptance", {
         taskId: state.currentTaskId,
         attemptId: state.activeAttemptId || state.taskStates?.[state.currentTaskId]?.latestAttemptId || null,
-        nextAction: "run final verification and wait for accept support",
+        nextAction: "run accept",
       });
     }
     if (state.activeAttemptId) {
@@ -786,9 +1228,10 @@ function next(request) {
     if (taskState.executionAttempts >= state.budgets.maxExecutionAttempts) {
       throw new KernelFailure("execution_error", "execution attempt budget exhausted", { taskId: task.taskId });
     }
+    const lease = ensureWorktree(repoRoot, state, task);
     const sequence = taskState.attempts.length + 1;
     const attemptId = `${task.taskId.replace(/\W+/g, "-")}-a${sequence}-${Date.now().toString(36)}`;
-    const worktreePath = path.join(repoRoot, ".spec-drive", "worktrees", state.runId, task.taskId);
+    const worktreePath = lease.worktreePath;
     const attempt = {
       attemptId,
       taskId: task.taskId,
@@ -801,11 +1244,12 @@ function next(request) {
       adapterStart: "unknown",
       worktree: {
         path: worktreePath,
-        branch: `spec-drive/${state.runId}/${task.taskId}`,
-        targetHeadAtCreate: "unknown",
+        branch: lease.branch,
+        targetHeadAtCreate: lease.targetHead,
         files: task.files,
       },
     };
+    writeTaskLease(repoRoot, state, task, attempt);
     state.attempts[attemptId] = attempt;
     taskState.status = "in_progress";
     taskState.latestAttemptId = attemptId;
@@ -930,6 +1374,196 @@ function report(request) {
   });
 }
 
+function advanceAfterAccepted(state, tasks, taskId) {
+  const currentIndex = (state.taskOrder || []).indexOf(taskId);
+  const nextId = (state.taskOrder || [])
+    .slice(Math.max(0, currentIndex + 1))
+    .find((candidate) => getTaskState(state, candidate)?.status !== "accepted");
+  const fallback = tasks.find((task) => getTaskState(state, task.taskId)?.status !== "accepted")?.taskId || null;
+  state.currentTaskId = nextId || fallback;
+  state.currentStage = state.currentTaskId ? "ready" : "completed";
+  state.activeAttemptId = null;
+}
+
+function commitAcceptedTarget(repoRoot, attempt, task, targetTree, verifyRecord) {
+  const message = task.fields.Commit.trim();
+  const trailer = `Spec-Drive-Attempt: ${attempt.attemptId}`;
+  runGit(repoRoot, ["commit", "-m", message, "-m", trailer], { errorCode: "acceptance_error" });
+  const commitOid = runGit(repoRoot, ["rev-parse", "HEAD"], { errorCode: "acceptance_error" });
+  const parent = runGit(repoRoot, ["rev-parse", `${commitOid}^`], { errorCode: "acceptance_error" });
+  const actualTree = runGit(repoRoot, ["rev-parse", `${commitOid}^{tree}`], { errorCode: "acceptance_error" });
+  const body = runGit(repoRoot, ["log", "-1", "--format=%B", commitOid], { errorCode: "acceptance_error" });
+  if (parent !== attempt.worktree.targetHeadAtCreate) {
+    throw acceptanceError("accepted commit parent does not match promotion intent", { commitOid, parent });
+  }
+  if (actualTree !== targetTree) {
+    throw acceptanceError("accepted commit tree does not match verified target tree", { commitOid, actualTree, targetTree });
+  }
+  if (!body.includes(trailer)) {
+    throw acceptanceError("accepted commit is missing attempt trailer", { commitOid, trailer });
+  }
+  return {
+    taskId: task.taskId,
+    attemptId: attempt.attemptId,
+    command: verifyRecord.command,
+    cwd: verifyRecord.cwd,
+    timeoutSec: verifyRecord.timeoutSec,
+    exitCode: verifyRecord.exitCode,
+    verifiedTree: targetTree,
+    commitOid,
+    parent,
+    tree: actualTree,
+    trailer,
+    acceptedAt: new Date().toISOString(),
+  };
+}
+
+function accept(request) {
+  const specDir = resolveSpecDir(requireString(request, "specDir"));
+  const repoRoot = path.resolve(requireString(request, "repoRoot"));
+  const attemptId = requireString(request, "attemptId");
+  return withStateLock(specDir, () => {
+    const { tasksArtifact, tasks, state } = loadValidatedPlan(specDir, repoRoot);
+    ensureLedger(state, tasks, tasksArtifact.hash);
+    const attempt = state.attempts?.[attemptId];
+    if (!attempt) {
+      throw requestError("unknown attemptId", { attemptId });
+    }
+    const task = taskById(tasks, attempt.taskId);
+    if (!task) {
+      throw requestError("attempt task is missing from current plan", { attemptId, taskId: attempt.taskId });
+    }
+    const taskState = state.taskStates?.[task.taskId];
+    if (!taskState) {
+      throw requestError("attempt task is missing from ledger", { attemptId, taskId: task.taskId });
+    }
+    if (attempt.state === "accepted" && taskState.acceptance && attempt.promotion?.stage === "tracking_updated") {
+      return { ok: true, accepted: taskState.acceptance };
+    }
+    if (attempt.state !== "reported_complete") {
+      throw acceptanceError("attempt is not ready for acceptance", { attemptId, state: attempt.state });
+    }
+    if (!attempt.report || attempt.report.outcome !== "task_complete") {
+      throw acceptanceError("attempt report is not complete", { attemptId });
+    }
+
+    return withRepoPromotionLock(repoRoot, state, () => {
+      requireTaskLease(repoRoot, state, task, attempt);
+      if (attempt.promotion && attempt.promotion.stage && attempt.promotion.stage !== "tracking_updated") {
+        throw acceptanceError("unsupported in-progress promotion state requires recovery", {
+          attemptId,
+          stage: attempt.promotion.stage,
+        });
+      }
+
+      const worktreePath = attempt.worktree?.path;
+      if (!worktreePath || !existsSync(worktreePath)) {
+        throw acceptanceError("attempt worktree is missing", { attemptId, worktreePath });
+      }
+      assertAttemptFilesOnly(worktreePath, task);
+      let worktreeVerify = null;
+      let verifiedWorktreeTree = null;
+      if (task.taskType !== "verify") {
+        worktreeVerify = runAuthoritativeVerify(worktreePath, task, task.fields.Cwd.trim(), "worktree", state);
+        assertAttemptFilesOnly(worktreePath, task);
+        verifiedWorktreeTree = treeFromDeclaredFiles(worktreePath, task.files);
+      }
+      const targetHead = runGit(repoRoot, ["rev-parse", "HEAD"], { errorCode: "external_change_error" });
+      const intent = {
+        attemptId,
+        taskId: task.taskId,
+        verifyCommand: task.fields.Verify,
+        verifyCwd: task.fields.Cwd.trim(),
+        verifyTimeoutSec: task.timeoutSec,
+        verifiedWorktreeTree,
+        targetHeadExpected: attempt.worktree.targetHeadAtCreate,
+        targetFilesExpectedClean: task.files,
+        commitTrailer: `Spec-Drive-Attempt: ${attemptId}`,
+        targetCommitMessage: task.fields.Commit.trim(),
+        stage: "intent_recorded",
+        worktreeVerify,
+      };
+      attempt.promotion = intent;
+      state.currentStage = "intent_recorded";
+      writeState(specDir, state);
+
+      if (task.taskType === "verify") {
+        requireTargetClean(repoRoot, state, task.taskId);
+        if (targetHead !== attempt.worktree.targetHeadAtCreate) {
+          throw externalChangeError("target HEAD changed before checkpoint acceptance", {
+            expected: attempt.worktree.targetHeadAtCreate,
+            actual: targetHead,
+          });
+        }
+        const targetVerify = runAuthoritativeVerify(repoRoot, task, task.fields.Cwd.trim(), "target", state);
+        const targetTree = runGit(repoRoot, ["rev-parse", "HEAD^{tree}"], { errorCode: "acceptance_error" });
+        const acceptance = {
+          taskId: task.taskId,
+          attemptId,
+          command: targetVerify.command,
+          cwd: targetVerify.cwd,
+          timeoutSec: targetVerify.timeoutSec,
+          exitCode: targetVerify.exitCode,
+          verifiedTree: targetTree,
+          commitOid: null,
+          parent: targetHead,
+          tree: targetTree,
+          trailer: null,
+          acceptedAt: new Date().toISOString(),
+        };
+        attempt.state = "accepted";
+        attempt.promotion.stage = "accepted_recorded";
+        taskState.status = "accepted";
+        taskState.acceptance = acceptance;
+        writeState(specDir, state);
+        projectTracking(specDir, state, tasks, task.taskId, acceptance);
+        attempt.promotion.stage = "tracking_updated";
+        advanceAfterAccepted(state, tasks, task.taskId);
+        writeState(specDir, state);
+        return { ok: true, accepted: acceptance };
+      }
+
+      requireTargetClean(repoRoot, state, task.taskId);
+      if (targetHead !== attempt.worktree.targetHeadAtCreate) {
+        throw externalChangeError("target HEAD changed before acceptance", {
+          expected: attempt.worktree.targetHeadAtCreate,
+          actual: targetHead,
+        });
+      }
+      attempt.promotion.stage = "target_verified_clean";
+      writeState(specDir, state);
+
+      applyTreeDiff(repoRoot, attempt.worktree.targetHeadAtCreate, verifiedWorktreeTree);
+      attempt.promotion.stage = "patch_applied";
+      writeState(specDir, state);
+
+      const changed = repoStatusPaths(repoRoot, { ignoreOwnedMetadata: true, state, taskId: task.taskId });
+      const outside = changed.filter((relPath) => !task.files.includes(relPath));
+      if (outside.length) {
+        throw acceptanceError("promotion changed files outside declared Files", { changedPaths: changed, outsidePaths: outside });
+      }
+      const targetVerify = runAuthoritativeVerify(repoRoot, task, task.fields.Cwd.trim(), "target", state);
+      const targetTree = treeFromDeclaredFiles(repoRoot, task.files);
+      attempt.promotion.stage = "target_verified";
+      attempt.promotion.targetVerify = targetVerify;
+      attempt.promotion.targetTree = targetTree;
+      writeState(specDir, state);
+
+      const acceptance = commitAcceptedTarget(repoRoot, attempt, task, targetTree, targetVerify);
+      attempt.state = "accepted";
+      attempt.promotion.stage = "accepted_recorded";
+      taskState.status = "accepted";
+      taskState.acceptance = acceptance;
+      writeState(specDir, state);
+      projectTracking(specDir, state, tasks, task.taskId, acceptance);
+      attempt.promotion.stage = "tracking_updated";
+      advanceAfterAccepted(state, tasks, task.taskId);
+      writeState(specDir, state);
+      return { ok: true, accepted: acceptance };
+    });
+  });
+}
+
 function status(request) {
   const specDir = resolveSpecDir(requireString(request, "specDir"));
   const state = readState(specDir);
@@ -988,6 +1622,9 @@ try {
       break;
     case "report":
       respond(report(request));
+      break;
+    case "accept":
+      respond(accept(request));
       break;
     case "resume":
       respond(resume(request));
