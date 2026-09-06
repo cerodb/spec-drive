@@ -685,6 +685,26 @@ function repoStatusPaths(repoRoot, { ignoreOwnedMetadata = false, state = {}, ta
   );
 }
 
+function worktreeOwnershipManifest(worktreePath, state = {}, taskId = null) {
+  return {
+    candidate: completeCandidateManifest(worktreePath, state, taskId),
+    status: repoStatusPaths(worktreePath, { ignoreOwnedMetadata: true, state, taskId }).sort(),
+    index: runGit(worktreePath, ["write-tree"], { errorCode: "acceptance_error" }),
+  };
+}
+
+function assertWorktreeManifestUnchanged(worktreePath, expected, state, taskId, label) {
+  if (!expected) return;
+  const actual = worktreeOwnershipManifest(worktreePath, state, taskId);
+  if (!sameJson(actual, expected)) {
+    throw externalChangeError(`${label} worktree ownership manifest changed outside the active attempt`, {
+      taskId,
+      expected,
+      actual,
+    });
+  }
+}
+
 function requireTargetClean(repoRoot, state = {}, taskId = null) {
   const dirty = repoStatusPaths(repoRoot, { ignoreOwnedMetadata: true, state, taskId });
   if (dirty.length) {
@@ -717,6 +737,13 @@ function ensureWorktree(repoRoot, state, task) {
       ? ["worktree", "add", worktreePath, branch]
       : ["worktree", "add", "-b", branch, worktreePath, targetHead];
     runGit(repoRoot, args, { errorCode: "external_change_error" });
+  }
+  const previousAttemptId = state.taskStates?.[task.taskId]?.latestAttemptId || null;
+  const previousAttempt = previousAttemptId ? state.attempts?.[previousAttemptId] : null;
+  if (previousAttempt?.ownership?.afterReport) {
+    assertWorktreeManifestUnchanged(worktreePath, previousAttempt.ownership.afterReport, state, task.taskId, "retry");
+  } else if (previousAttempt?.ownership?.beforeDispatch && previousAttempt.state !== "abandoned") {
+    assertWorktreeManifestUnchanged(worktreePath, previousAttempt.ownership.beforeDispatch, state, task.taskId, "retry");
   }
   return { worktreePath, branch, targetHead };
 }
@@ -1293,6 +1320,14 @@ function next(request) {
         nextAction: "run accept",
       });
     }
+    if (["blocked", "recovery_required", "indeterminate"].includes(state.currentStage)) {
+      throw requestError("current task requires recovery before new dispatch", {
+        taskId: state.currentTaskId,
+        attemptId: state.activeAttemptId || state.taskStates?.[state.currentTaskId]?.latestAttemptId || null,
+        stage: state.currentStage,
+        lastFailureClass: state.lastFailureClass || null,
+      });
+    }
     if (state.activeAttemptId) {
       const active = state.attempts[state.activeAttemptId];
       if (active && !["reported_complete", "reported_blocked", "accepted", "abandoned"].includes(active.state)) {
@@ -1340,6 +1375,9 @@ function next(request) {
         targetHeadAtCreate: lease.targetHead,
         files: task.files,
       },
+      ownership: {
+        beforeDispatch: worktreeOwnershipManifest(worktreePath, state, task.taskId),
+      },
     };
     writeTaskLease(repoRoot, state, task, attempt);
     state.attempts[attemptId] = attempt;
@@ -1379,6 +1417,15 @@ function sameReport(left, right) {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
+const FAILURE_CLASSES = new Set([
+  "dispatch_error",
+  "env_error",
+  "logic_error",
+  "verify_error",
+  "design_error",
+  "external_change_error",
+]);
+
 function report(request) {
   const specDir = resolveSpecDir(requireString(request, "specDir"));
   const attemptId = requireString(request, "attemptId");
@@ -1391,6 +1438,12 @@ function report(request) {
     const attempt = state.attempts?.[attemptId];
     if (!attempt) {
       throw requestError("unknown attemptId", { attemptId });
+    }
+    if (attempt.state === "abandoned") {
+      if (attempt.report && sameReport(attempt.report, incoming)) {
+        return { ok: true, report: "duplicate_ignored", attemptId };
+      }
+      return { ok: true, report: "late_ignored", attemptId };
     }
     if (attempt.report) {
       if (sameReport(attempt.report, incoming)) {
@@ -1407,8 +1460,15 @@ function report(request) {
     }
     const adapterEvidence = request.adapterEvidence || "unknown";
     const noStartDemonstrated = adapterEvidence === "not_started";
+    if (incoming.failureClass && !FAILURE_CLASSES.has(incoming.failureClass)) {
+      throw requestError("unsupported failureClass", { attemptId, failureClass: incoming.failureClass });
+    }
     attempt.report = incoming;
     attempt.adapterStart = adapterEvidence;
+    if (attempt.worktree?.path && existsSync(attempt.worktree.path)) {
+      attempt.ownership ||= {};
+      attempt.ownership.afterReport = worktreeOwnershipManifest(attempt.worktree.path, state, attempt.taskId);
+    }
     if (incoming.outcome === "task_complete") {
       if (adapterEvidence !== "started" || incoming.startedWork !== true) {
         attempt.state = "indeterminate";
@@ -1438,12 +1498,30 @@ function report(request) {
       state.currentStage = "ready";
       state.activeAttemptId = null;
       state.lastFailureClass = "dispatch_error";
+    } else if (incoming.failureClass === "dispatch_error" && adapterEvidence === "unknown") {
+      attempt.state = "indeterminate";
+      taskState.status = "blocked";
+      state.currentStage = "indeterminate";
+      state.activeAttemptId = attemptId;
+      state.lastFailureClass = "dispatch_error";
     } else if (incoming.outcome === "task_indeterminate" || adapterEvidence === "unknown") {
       attempt.state = "indeterminate";
       taskState.status = "blocked";
       state.currentStage = "indeterminate";
       state.activeAttemptId = attemptId;
       state.lastFailureClass = incoming.failureClass || "unknown_start";
+    } else if (incoming.failureClass === "env_error") {
+      attempt.state = "reported_blocked";
+      taskState.status = "blocked";
+      state.currentStage = "recovery_required";
+      state.activeAttemptId = null;
+      state.lastFailureClass = "env_error";
+    } else if (incoming.failureClass === "verify_error" || incoming.failureClass === "design_error" || incoming.failureClass === "external_change_error") {
+      attempt.state = "reported_blocked";
+      taskState.status = "blocked";
+      state.currentStage = "blocked";
+      state.activeAttemptId = null;
+      state.lastFailureClass = incoming.failureClass;
     } else {
       attempt.state = "reported_blocked";
       taskState.status = "pending";
@@ -1906,6 +1984,12 @@ function resume(request) {
     if (!taskState) {
       throw requestError("attempt task is missing from ledger", { attemptId: attempt.attemptId, taskId: task.taskId });
     }
+    if (attempt.state === "reported_complete" && !attempt.promotion && attempt.worktree?.path && existsSync(attempt.worktree.path)) {
+      const changed = repoStatusPaths(attempt.worktree.path, { ignoreOwnedMetadata: true, state, taskId: task.taskId });
+      if (changed.length === 0) {
+        return resumeSummary(tasks, requiredCoverage, state);
+      }
+    }
     if (attempt.state === "accepted" && attempt.promotion?.stage === "accepted_recorded") {
       return resumeAcceptedProjection(request, specDir, state, tasks, taskState, attempt, task);
     }
@@ -1913,6 +1997,77 @@ function resume(request) {
       throw acceptanceError("attempt report is not complete", { attemptId: attempt.attemptId });
     }
     return withRepoPromotionLock(repoRoot, state, () => promoteAttempt(request, specDir, repoRoot, state, tasks, taskState, attempt, task));
+  });
+}
+
+function recover(request) {
+  const specDir = resolveSpecDir(requireString(request, "specDir"));
+  const attemptId = requireString(request, "attemptId");
+  const evidence = requireString(request, "evidence");
+  if (evidence.trim().length < 8) {
+    throw requestError("recover requires explicit recovery evidence", { attemptId });
+  }
+  return withStateLock(specDir, () => {
+    const state = readState(specDir);
+    const attempt = state.attempts?.[attemptId];
+    if (!attempt) {
+      throw requestError("unknown attemptId", { attemptId });
+    }
+    const taskState = state.taskStates?.[attempt.taskId];
+    if (!taskState) {
+      throw requestError("attempt task is missing from ledger", { attemptId, taskId: attempt.taskId });
+    }
+    const recoverable = attempt.state === "indeterminate"
+      || (attempt.state === "reported_blocked" && attempt.report?.failureClass === "env_error");
+    if (!recoverable) {
+      throw requestError("attempt is not in a recoverable state", {
+        attemptId,
+        state: attempt.state,
+        failureClass: attempt.report?.failureClass || null,
+      });
+    }
+    if (attempt.worktree?.path && existsSync(attempt.worktree.path)) {
+      const expected = attempt.ownership?.afterReport || attempt.ownership?.beforeDispatch;
+      assertWorktreeManifestUnchanged(attempt.worktree.path, expected, state, attempt.taskId, "recover");
+    }
+    attempt.recovery = {
+      evidence: evidence.trim(),
+      recoveredAt: new Date().toISOString(),
+      previousState: attempt.state,
+      failureClass: attempt.report?.failureClass || state.lastFailureClass || null,
+    };
+    attempt.state = "abandoned";
+    taskState.status = "pending";
+    state.currentTaskId = attempt.taskId;
+    state.currentStage = "ready";
+    if (state.activeAttemptId === attemptId) state.activeAttemptId = null;
+    state.lastFailureClass = null;
+    writeState(specDir, state);
+    return {
+      ok: true,
+      recovered: {
+        attemptId,
+        taskId: attempt.taskId,
+        nextAction: "retry",
+      },
+    };
+  });
+}
+
+function pause(request) {
+  const specDir = resolveSpecDir(requireString(request, "specDir"));
+  const reason = requireString(request, "reason");
+  return withStateLock(specDir, () => {
+    const state = readState(specDir);
+    state.paused = {
+      reason,
+      pausedAt: new Date().toISOString(),
+      activeAttemptId: state.activeAttemptId || null,
+      currentTaskId: state.currentTaskId || null,
+      currentStage: state.currentStage || "preflight",
+    };
+    writeState(specDir, state);
+    return { ok: true, paused: state.paused };
   });
 }
 
@@ -1938,7 +2093,11 @@ try {
       respond(resume(request));
       break;
     case "recover":
-      throw requestError("recover is not implemented by the execution kernel POC");
+      respond(recover(request));
+      break;
+    case "pause":
+      respond(pause(request));
+      break;
     case "status":
       respond(status(request));
       break;

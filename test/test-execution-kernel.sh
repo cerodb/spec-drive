@@ -344,6 +344,40 @@ run_resume() {
   kernel_json "$input" "$dir/resume-$name.out" "$dir/resume-$name.err"
 }
 
+run_recover() {
+  local dir="$1"
+  local name="$2"
+  local attempt_id="$3"
+  local evidence="$4"
+  local input="$dir/recover-$name.json"
+  node -e '
+    const fs = require("fs");
+    fs.writeFileSync(process.argv[1], JSON.stringify({
+      op: "recover",
+      specDir: process.argv[2],
+      attemptId: process.argv[3],
+      evidence: process.argv[4]
+    }));
+  ' "$input" "$dir/spec" "$attempt_id" "$evidence"
+  kernel_json "$input" "$dir/recover-$name.out" "$dir/recover-$name.err"
+}
+
+run_pause() {
+  local dir="$1"
+  local name="$2"
+  local reason="$3"
+  local input="$dir/pause-$name.json"
+  node -e '
+    const fs = require("fs");
+    fs.writeFileSync(process.argv[1], JSON.stringify({
+      op: "pause",
+      specDir: process.argv[2],
+      reason: process.argv[3]
+    }));
+  ' "$input" "$dir/spec" "$reason"
+  kernel_json "$input" "$dir/pause-$name.out" "$dir/pause-$name.err"
+}
+
 run_report() {
   local dir="$1"
   local name="$2"
@@ -633,7 +667,7 @@ ledger_poc() {
   if run_next "$dir" "after-unknown"; then
     fail "indeterminate attempt allowed automatic redispatch"
   fi
-  assert_json_error_contains "$dir/next-after-unknown.out" "active attempt prevents new dispatch"
+  assert_json_error_contains "$dir/next-after-unknown.out" "requires recovery"
 
   local complete="$TMP_ROOT/reported-complete"
   write_fixture "$complete"
@@ -794,11 +828,11 @@ ledger_poc() {
   fi
   assert_json_error_contains "$semantic/preflight.out" "tasks hash is stale"
 
-  node -e 'const fs=require("fs"); fs.writeFileSync(process.argv[1], JSON.stringify({op:"recover", specDir:process.argv[2], attemptId:"missing", evidence:"fixture"}));' "$dir/recover.json" "$dir/spec"
+  node -e 'const fs=require("fs"); fs.writeFileSync(process.argv[1], JSON.stringify({op:"recover", specDir:process.argv[2], attemptId:"missing", evidence:"fixture recovery evidence"}));' "$dir/recover.json" "$dir/spec"
   if kernel_json "$dir/recover.json" "$dir/recover.out" "$dir/recover.err"; then
     fail "recover unexpectedly succeeded"
   fi
-  assert_json_error_contains "$dir/recover.out" "recover is not implemented"
+  assert_json_error_contains "$dir/recover.out" "unknown attemptId"
 }
 
 accept_code_task() {
@@ -1110,11 +1144,11 @@ EOF_GPG
   assert_json_error_contains "$checkpoint_mutation/accept-checkpoint-mut-accept.out" "target Verify mutated candidate tree"
   [[ "$(cat "$checkpoint_mutation/repo/src/tracked name.txt")" == "checkpoint-mutated" ]] || fail "checkpoint mutation bytes were not preserved"
 
-  node -e 'const fs=require("fs"); fs.writeFileSync(process.argv[1], JSON.stringify({op:"recover", specDir:process.argv[2], attemptId:"missing", evidence:"fixture"}));' "$dir/recover-flow.json" "$dir/spec"
+  node -e 'const fs=require("fs"); fs.writeFileSync(process.argv[1], JSON.stringify({op:"recover", specDir:process.argv[2], attemptId:"missing", evidence:"fixture recovery evidence"}));' "$dir/recover-flow.json" "$dir/spec"
   if kernel_json "$dir/recover-flow.json" "$dir/recover-flow.out" "$dir/recover-flow.err"; then
     fail "flow recover unexpectedly succeeded"
   fi
-  assert_json_error_contains "$dir/recover-flow.out" "recover is not implemented"
+  assert_json_error_contains "$dir/recover-flow.out" "unknown attemptId"
 }
 
 prepare_alpha_attempt() {
@@ -1415,11 +1449,163 @@ EOF_HOOK
   grep -q 'V1: accepted' "$dir/spec/.progress.md" || fail "checkpoint projection recovery missing progress"
 }
 
+ownership_poc() {
+  local dir attempt worktree retry_attempt retry_worktree
+
+  dir="$TMP_ROOT/ownership-logic-preserve"
+  write_flow_fixture "$dir"
+  approve_all "$dir"
+  run_next "$dir" "first" || fail "ownership logic first next failed: $(cat "$dir/next-first.err")"
+  attempt="$(json_get "$dir/next-first.out" "dispatch.attemptId")"
+  worktree="$(json_get "$dir/next-first.out" "dispatch.worktreePath")"
+  mkdir -p "$worktree/src"
+  printf 'partial-own\n' > "$worktree/src/alpha.txt"
+  run_report "$dir" "logic" "$attempt" "1.1" "task_blocked" "logic_error" "started" "true" \
+    || fail "ownership logic report failed: $(cat "$dir/report-logic.err")"
+  run_next "$dir" "retry" || fail "ownership logic retry failed: $(cat "$dir/next-retry.err")"
+  retry_attempt="$(json_get "$dir/next-retry.out" "dispatch.attemptId")"
+  retry_worktree="$(json_get "$dir/next-retry.out" "dispatch.worktreePath")"
+  [[ "$retry_attempt" != "$attempt" ]] || fail "logic retry reused attemptId"
+  [[ "$retry_worktree" == "$worktree" ]] || fail "logic retry did not preserve worktree"
+  [[ "$(cat "$worktree/src/alpha.txt")" == "partial-own" ]] || fail "logic retry lost owned worktree bytes"
+  node -e '
+    const fs = require("fs");
+    const state = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    const task = state.taskStates["1.1"];
+    if (task.executionAttempts !== 2 || state.budgets.globalBudgetUsed !== 2) process.exit(1);
+  ' "$dir/spec/.spec-drive-state.json" || fail "logic retry reset budgets"
+
+  dir="$TMP_ROOT/ownership-worktree-drift"
+  write_flow_fixture "$dir"
+  approve_all "$dir"
+  run_next "$dir" "first" || fail "worktree drift first next failed: $(cat "$dir/next-first.err")"
+  attempt="$(json_get "$dir/next-first.out" "dispatch.attemptId")"
+  worktree="$(json_get "$dir/next-first.out" "dispatch.worktreePath")"
+  mkdir -p "$worktree/src"
+  printf 'partial-own\n' > "$worktree/src/alpha.txt"
+  run_report "$dir" "logic" "$attempt" "1.1" "task_blocked" "logic_error" "started" "true" \
+    || fail "worktree drift report failed: $(cat "$dir/report-logic.err")"
+  printf 'external drift\n' > "$worktree/src/external-drift.txt"
+  if run_next "$dir" "retry"; then
+    fail "worktree drift allowed retry"
+  fi
+  assert_json_error_contains "$dir/next-retry.out" "ownership manifest changed"
+  [[ "$(cat "$worktree/src/alpha.txt")" == "partial-own" ]] || fail "worktree drift lost owned bytes"
+  [[ "$(cat "$worktree/src/external-drift.txt")" == "external drift" ]] || fail "worktree drift lost external bytes"
+
+  dir="$TMP_ROOT/ownership-target-drift"
+  write_flow_fixture "$dir"
+  approve_all "$dir"
+  run_next "$dir" "first" || fail "target drift first next failed: $(cat "$dir/next-first.err")"
+  attempt="$(json_get "$dir/next-first.out" "dispatch.attemptId")"
+  worktree="$(json_get "$dir/next-first.out" "dispatch.worktreePath")"
+  mkdir -p "$worktree/src"
+  printf 'partial-own\n' > "$worktree/src/alpha.txt"
+  run_report "$dir" "logic" "$attempt" "1.1" "task_blocked" "logic_error" "started" "true" \
+    || fail "target drift report failed: $(cat "$dir/report-logic.err")"
+  printf 'external target\n' > "$dir/repo/src/external-target.txt"
+  if run_next "$dir" "retry"; then
+    fail "target untracked drift allowed retry"
+  fi
+  assert_json_error_contains "$dir/next-retry.out" "external changes"
+  [[ "$(cat "$dir/repo/src/external-target.txt")" == "external target" ]] || fail "target drift bytes were lost"
+
+  dir="$TMP_ROOT/ownership-env-recover"
+  write_flow_fixture "$dir"
+  approve_all "$dir"
+  run_next "$dir" "first" || fail "env recover first next failed: $(cat "$dir/next-first.err")"
+  attempt="$(json_get "$dir/next-first.out" "dispatch.attemptId")"
+  worktree="$(json_get "$dir/next-first.out" "dispatch.worktreePath")"
+  mkdir -p "$worktree/src"
+  printf 'env-owned\n' > "$worktree/src/alpha.txt"
+  run_report "$dir" "env" "$attempt" "1.1" "task_blocked" "env_error" "started" "true" \
+    || fail "env report failed: $(cat "$dir/report-env.err")"
+  if run_next "$dir" "before-recover"; then
+    fail "env_error allowed retry without recovery"
+  fi
+  assert_json_error_contains "$dir/next-before-recover.out" "requires recovery"
+  if run_recover "$dir" "short" "$attempt" "fixed"; then
+    fail "short recovery evidence was accepted"
+  fi
+  assert_json_error_contains "$dir/recover-short.out" "explicit recovery evidence"
+  run_recover "$dir" "env" "$attempt" "executor ended and missing runtime was restored" \
+    || fail "env recover failed: $(cat "$dir/recover-env.err")"
+  assert_json_ok "$dir/recover-env.out"
+  run_next "$dir" "after-recover" || fail "env retry after recover failed: $(cat "$dir/next-after-recover.err")"
+  retry_attempt="$(json_get "$dir/next-after-recover.out" "dispatch.attemptId")"
+  retry_worktree="$(json_get "$dir/next-after-recover.out" "dispatch.worktreePath")"
+  [[ "$retry_attempt" != "$attempt" ]] || fail "env retry reused attemptId"
+  [[ "$retry_worktree" == "$worktree" ]] || fail "env retry did not preserve worktree"
+  [[ "$(cat "$worktree/src/alpha.txt")" == "env-owned" ]] || fail "env retry lost owned bytes"
+  node -e '
+    const fs = require("fs");
+    const state = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    const task = state.taskStates["1.1"];
+    if (task.executionAttempts !== 2 || state.budgets.globalBudgetUsed !== 2) process.exit(1);
+    if (!state.attempts[process.argv[2]].recovery) process.exit(1);
+  ' "$dir/spec/.spec-drive-state.json" "$attempt" || fail "env recovery reset or lost counters"
+
+  dir="$TMP_ROOT/ownership-indeterminate-late"
+  write_flow_fixture "$dir"
+  approve_all "$dir"
+  run_next "$dir" "first" || fail "indeterminate first next failed: $(cat "$dir/next-first.err")"
+  attempt="$(json_get "$dir/next-first.out" "dispatch.attemptId")"
+  worktree="$(json_get "$dir/next-first.out" "dispatch.worktreePath")"
+  mkdir -p "$worktree/src"
+  printf 'uncertain-owned\n' > "$worktree/src/alpha.txt"
+  run_report "$dir" "unknown" "$attempt" "1.1" "task_blocked" "logic_error" "unknown" "false" \
+    || fail "indeterminate report failed: $(cat "$dir/report-unknown.err")"
+  if run_next "$dir" "before-recover"; then
+    fail "indeterminate allowed automatic redispatch"
+  fi
+  assert_json_error_contains "$dir/next-before-recover.out" "requires recovery"
+  run_recover "$dir" "unknown" "$attempt" "executor process tree confirmed ended" \
+    || fail "indeterminate recover failed: $(cat "$dir/recover-unknown.err")"
+  run_next "$dir" "after-recover" || fail "indeterminate retry after recover failed: $(cat "$dir/next-after-recover.err")"
+  retry_attempt="$(json_get "$dir/next-after-recover.out" "dispatch.attemptId")"
+  run_report "$dir" "late" "$attempt" "1.1" "task_complete" "none" "started" "true" \
+    || fail "late abandoned report returned error: $(cat "$dir/report-late.err")"
+  node -e '
+    const fs = require("fs");
+    const late = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    const state = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+    if (late.report !== "late_ignored") process.exit(1);
+    if (state.activeAttemptId !== process.argv[3] || state.currentStage !== "dispatching") process.exit(1);
+  ' "$dir/report-late.out" "$dir/spec/.spec-drive-state.json" "$retry_attempt" || fail "late abandoned report modified current state"
+
+  dir="$TMP_ROOT/ownership-blocked-classes"
+  write_flow_fixture "$dir"
+  approve_all "$dir"
+  run_next "$dir" "verify" || fail "blocked class next failed: $(cat "$dir/next-verify.err")"
+  attempt="$(json_get "$dir/next-verify.out" "dispatch.attemptId")"
+  run_report "$dir" "verify" "$attempt" "1.1" "task_blocked" "verify_error" "started" "true" \
+    || fail "verify_error report failed: $(cat "$dir/report-verify.err")"
+  if run_next "$dir" "after-verify"; then
+    fail "verify_error allowed same-plan retry"
+  fi
+  assert_json_error_contains "$dir/next-after-verify.out" "requires recovery"
+
+  dir="$TMP_ROOT/ownership-pause"
+  write_flow_fixture "$dir"
+  approve_all "$dir"
+  run_next "$dir" "first" || fail "pause first next failed: $(cat "$dir/next-first.err")"
+  attempt="$(json_get "$dir/next-first.out" "dispatch.attemptId")"
+  run_pause "$dir" "active" "operator cancelled without deleting work" || fail "pause failed: $(cat "$dir/pause-active.err")"
+  assert_json_ok "$dir/pause-active.out"
+  node -e '
+    const fs = require("fs");
+    const state = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    if (!state.paused || state.paused.activeAttemptId !== process.argv[2]) process.exit(1);
+    if (state.taskStates["1.1"].executionAttempts !== 1 || state.budgets.globalBudgetUsed !== 1) process.exit(1);
+  ' "$dir/spec/.spec-drive-state.json" "$attempt" || fail "pause reset counters or lost active attempt"
+}
+
 all() {
   gate_poc
   ledger_poc
   flow_poc
   crash_poc
+  ownership_poc
 }
 
 if [[ $# -eq 0 ]]; then
@@ -1432,6 +1618,7 @@ for mode in "$@"; do
     ledger-poc) ledger_poc ;;
     flow-poc) flow_poc ;;
     crash) crash_poc ;;
+    ownership) ownership_poc ;;
     all) all ;;
     *) fail "unknown mode: $mode" ;;
   esac
