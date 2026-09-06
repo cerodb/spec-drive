@@ -138,7 +138,8 @@ Prerequisites on macOS: Node.js >=18, `bash`, `git`, and `jq`. Install `jq` via 
 
 ## Release Notes
 
-- Current release: `v1.4.1` (2026-08-18)
+- Current release: `v2.0.0` (unpublished candidate)
+- Last published release: `v1.4.1` (2026-08-18)
 - `v1.4.1` is test-harness maintenance with no runtime change over `v1.4.0`: macOS path assertions were comparing raw `mktemp -d` output against symlink-resolved resolver output, and a new suite covers a workspace root reached through a symlink.
 - `v1.4.0` adds scoped per-key configuration, atomic project scaffolding, canonical project artifact destinations, and expanded portability/security regression coverage.
 - `v1.3.0` introduced the adaptive model router: optional `model:`/`model_used:` task metadata, abstract routing tiers, and `/spec-drive:implement` dispatch through the model resolver. The `v1.3.1`-`v1.3.4` patches added concrete Codex subprocess model IDs and the CLI-neutral implementer contract, fixed resolver lookup via `${CLAUDE_PLUGIN_ROOT}`, and moved subprocess prompts to a file handoff.
