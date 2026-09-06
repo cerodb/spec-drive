@@ -746,14 +746,96 @@ function contentManifest(root, files) {
   const manifest = {};
   for (const relPath of files) {
     const filePath = path.join(root, relPath);
-    if (!existsSync(filePath)) {
+    let st;
+    try {
+      st = lstatSync(filePath);
+    } catch (error) {
+      if (error.code === "ENOENT") {
+        manifest[relPath] = null;
+        continue;
+      }
+      throw error;
+    }
+    if (!st) {
       manifest[relPath] = null;
       continue;
     }
-    const bytes = readFileSync(filePath);
-    manifest[relPath] = { sha256: sha256(bytes), bytes: bytes.length };
+    if (st.isSymbolicLink()) {
+      manifest[relPath] = { mode: "symlink", target: readlinkSync(filePath) };
+    } else if (st.isFile()) {
+      const bytes = readFileSync(filePath);
+      manifest[relPath] = { mode: (statSync(filePath).mode & 0o777).toString(8), sha256: sha256(bytes), bytes: bytes.length };
+    } else {
+      manifest[relPath] = { mode: "unsupported" };
+    }
   }
   return manifest;
+}
+
+function manifestMatches(root, manifest) {
+  return sameJson(contentManifest(root, Object.keys(manifest || {})), manifest || {});
+}
+
+function validateManifestEntry(entry, relPath, side) {
+  if (entry === null) return;
+  if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+    throw acceptanceError("promotion manifest entry is malformed", { side, path: relPath });
+  }
+  if (entry.mode === "symlink") {
+    if (typeof entry.target !== "string" || entry.target.includes("\0")) {
+      throw acceptanceError("promotion symlink manifest entry is malformed", { side, path: relPath });
+    }
+    throw acceptanceError("promotion recovery refuses symlink target paths", { side, path: relPath, target: entry.target });
+  }
+  if (!/^[0-7]{3,4}$/.test(String(entry.mode || "")) || typeof entry.sha256 !== "string" || !/^[a-f0-9]{64}$/.test(entry.sha256) || !Number.isSafeInteger(entry.bytes) || entry.bytes < 0) {
+    throw acceptanceError("promotion manifest entry is malformed", { side, path: relPath, entry });
+  }
+}
+
+function validatePromotionIntent(repoRoot, attempt, task) {
+  const intent = attempt.promotion;
+  if (!intent || typeof intent !== "object") {
+    throw acceptanceError("promotion intent is missing", { attemptId: attempt.attemptId });
+  }
+  if (intent.attemptId !== attempt.attemptId || intent.taskId !== task.taskId) {
+    throw acceptanceError("promotion intent identity does not match attempt", { attemptId: attempt.attemptId, taskId: task.taskId });
+  }
+  if (intent.verifyCommand !== task.fields.Verify || intent.verifyCwd !== task.fields.Cwd.trim() || intent.verifyTimeoutSec !== task.timeoutSec) {
+    throw acceptanceError("promotion intent verify definition changed", { attemptId: attempt.attemptId });
+  }
+  if (intent.targetHeadExpected !== attempt.worktree?.targetHeadAtCreate) {
+    throw acceptanceError("promotion intent parent does not match attempt lease", { attemptId: attempt.attemptId });
+  }
+  if (intent.commitTrailer !== `Spec-Drive-Attempt: ${attempt.attemptId}` || intent.targetCommitMessage !== task.fields.Commit.trim()) {
+    throw acceptanceError("promotion intent commit identity changed", { attemptId: attempt.attemptId });
+  }
+  const patch = Buffer.from(String(intent.patchBase64 || ""), "base64");
+  if (sha256(patch) !== intent.patchSha256) {
+    throw acceptanceError("promotion patch hash does not match persisted patch", { attemptId: attempt.attemptId });
+  }
+  const before = intent.targetBeforeManifest;
+  const after = intent.targetAfterManifest;
+  if (!before || typeof before !== "object" || Array.isArray(before) || !after || typeof after !== "object" || Array.isArray(after)) {
+    throw acceptanceError("promotion manifests are malformed", { attemptId: attempt.attemptId });
+  }
+  const beforeKeys = Object.keys(before).sort();
+  const afterKeys = Object.keys(after).sort();
+  const expectedKeys = [...task.files].sort();
+  if (!sameJson(beforeKeys, expectedKeys) || !sameJson(afterKeys, expectedKeys)) {
+    throw acceptanceError("promotion manifest paths do not match declared Files", { attemptId: attempt.attemptId, beforeKeys, afterKeys, expectedKeys });
+  }
+  for (const relPath of expectedKeys) {
+    validateRelativePath(repoRoot, relPath, task.taskId, "Files");
+    validateManifestEntry(before[relPath], relPath, "before");
+    validateManifestEntry(after[relPath], relPath, "after");
+  }
+  if (intent.verifiedWorktreeTree && !/^[a-f0-9]{40}$/.test(intent.verifiedWorktreeTree)) {
+    throw acceptanceError("promotion verified worktree tree is malformed", { attemptId: attempt.attemptId });
+  }
+  if (intent.targetTree && intent.targetTree !== intent.verifiedWorktreeTree) {
+    throw acceptanceError("promotion target tree does not match verified worktree tree", { attemptId: attempt.attemptId });
+  }
+  return intent;
 }
 
 function listTrackedFiles(root) {
@@ -868,7 +950,7 @@ function treeFromDeclaredFiles(worktreePath, files) {
   return tree;
 }
 
-function applyTreeDiff(targetRepoPath, baseCommit, tree) {
+function promotionPatch(targetRepoPath, baseCommit, tree) {
   const diff = spawnSync("git", ["-C", targetRepoPath, "diff", "--binary", baseCommit, tree], {
     encoding: "buffer",
     env: { ...process.env },
@@ -879,8 +961,12 @@ function applyTreeDiff(targetRepoPath, baseCommit, tree) {
       detail: diff.error?.message || diff.stderr?.toString("utf8") || "git diff failed",
     });
   }
+  return diff.stdout;
+}
+
+function applyPromotionPatch(targetRepoPath, patchBase64) {
   const apply = spawnSync("git", ["-C", targetRepoPath, "apply", "--binary", "--index"], {
-    input: diff.stdout,
+    input: Buffer.from(patchBase64 || "", "base64"),
     encoding: "buffer",
     env: { ...process.env },
     maxBuffer: 20 * 1024 * 1024,
@@ -889,6 +975,12 @@ function applyTreeDiff(targetRepoPath, baseCommit, tree) {
     throw acceptanceError("failed to apply promotion diff", {
       detail: apply.error?.message || apply.stderr?.toString("utf8") || "git apply failed",
     });
+  }
+}
+
+function maybeCrash(request, point) {
+  if (request.crashAt === point) {
+    throw acceptanceError(`injected crash: ${point}`, { crashAt: point });
   }
 }
 
@@ -1385,6 +1477,105 @@ function advanceAfterAccepted(state, tasks, taskId) {
   state.activeAttemptId = null;
 }
 
+function findCommitsByTrailer(repoRoot, trailer) {
+  const output = runGit(repoRoot, ["log", "HEAD", "--format=%H%x1f%B%x1e", "--grep", trailer, "--fixed-strings"], {
+    errorCode: "acceptance_error",
+  });
+  if (!output.trim()) return [];
+  return output
+    .split("\x1e")
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const [commitOid, body = ""] = entry.split("\x1f");
+      return { commitOid: commitOid.trim(), body };
+    })
+    .filter(({ body }) => body.split(/\r?\n/).some((line) => line.trim() === trailer))
+    .map(({ commitOid }) => commitOid);
+}
+
+function commitEvidence(repoRoot, commitOid) {
+  const parent = runGit(repoRoot, ["rev-parse", `${commitOid}^`], { errorCode: "acceptance_error" });
+  const tree = runGit(repoRoot, ["rev-parse", `${commitOid}^{tree}`], { errorCode: "acceptance_error" });
+  const body = runGit(repoRoot, ["log", "-1", "--format=%B", commitOid], { errorCode: "acceptance_error" });
+  return { commitOid, parent, tree, body };
+}
+
+function acceptanceFromCommit(task, attempt, verifyRecord, evidence) {
+  const trailer = `Spec-Drive-Attempt: ${attempt.attemptId}`;
+  return {
+    taskId: task.taskId,
+    attemptId: attempt.attemptId,
+    command: verifyRecord.command,
+    cwd: verifyRecord.cwd,
+    timeoutSec: verifyRecord.timeoutSec,
+    exitCode: verifyRecord.exitCode,
+    verifiedTree: evidence.tree,
+    commitOid: evidence.commitOid,
+    parent: evidence.parent,
+    tree: evidence.tree,
+    trailer,
+    acceptedAt: new Date().toISOString(),
+  };
+}
+
+function assertVerifyRecordMatchesPromotion(repoRoot, attempt, task, targetTree, verifyRecord) {
+  if (!verifyRecord || typeof verifyRecord !== "object" || Array.isArray(verifyRecord)) {
+    throw acceptanceError("existing accepted commit recovery is missing target Verify record", { attemptId: attempt.attemptId });
+  }
+  const expectedCwd = path.resolve(repoRoot, task.fields.Cwd.trim());
+  if (verifyRecord.command !== task.fields.Verify || verifyRecord.cwd !== expectedCwd || verifyRecord.timeoutSec !== task.timeoutSec) {
+    throw acceptanceError("existing accepted commit Verify record does not match task definition", { attemptId: attempt.attemptId });
+  }
+  if (verifyRecord.timedOut !== false || verifyRecord.exitCode !== 0) {
+    throw acceptanceError("existing accepted commit Verify record is not successful", { attemptId: attempt.attemptId, verify: verifyRecord });
+  }
+  if (attempt.promotion?.targetTree !== targetTree) {
+    throw acceptanceError("existing accepted commit Verify tree does not match promotion intent", {
+      attemptId: attempt.attemptId,
+      targetTree: attempt.promotion?.targetTree || null,
+      expected: targetTree,
+    });
+  }
+}
+
+function reconcileTrailerCommit(repoRoot, state, attempt, task, targetTree, verifyRecord) {
+  const trailer = `Spec-Drive-Attempt: ${attempt.attemptId}`;
+  const commits = findCommitsByTrailer(repoRoot, trailer);
+  if (commits.length > 1) {
+    throw acceptanceError("multiple accepted commits found for attempt trailer", { attemptId: attempt.attemptId, commits, trailer });
+  }
+  if (commits.length === 0) return null;
+  const evidence = commitEvidence(repoRoot, commits[0]);
+  if (evidence.parent !== attempt.worktree.targetHeadAtCreate) {
+    throw acceptanceError("existing accepted commit parent does not match promotion intent", {
+      commitOid: evidence.commitOid,
+      parent: evidence.parent,
+      expected: attempt.worktree.targetHeadAtCreate,
+    });
+  }
+  if (evidence.tree !== targetTree) {
+    throw acceptanceError("existing accepted commit tree does not match verified target tree", {
+      commitOid: evidence.commitOid,
+      actualTree: evidence.tree,
+      expectedTree: targetTree,
+    });
+  }
+  if (!evidence.body.split(/\r?\n/).some((line) => line.trim() === trailer)) {
+    throw acceptanceError("existing accepted commit is missing attempt trailer", { commitOid: evidence.commitOid, trailer });
+  }
+  assertVerifyRecordMatchesPromotion(repoRoot, attempt, task, targetTree, verifyRecord);
+  const head = runGit(repoRoot, ["rev-parse", "HEAD"], { errorCode: "external_change_error" });
+  if (head !== evidence.commitOid) {
+    throw externalChangeError("existing accepted commit is not current target HEAD", {
+      commitOid: evidence.commitOid,
+      head,
+    });
+  }
+  requireTargetClean(repoRoot, state, task.taskId);
+  return acceptanceFromCommit(task, attempt, verifyRecord, evidence);
+}
+
 function commitAcceptedTarget(repoRoot, attempt, task, targetTree, verifyRecord) {
   const message = task.fields.Commit.trim();
   const trailer = `Spec-Drive-Attempt: ${attempt.attemptId}`;
@@ -1399,7 +1590,7 @@ function commitAcceptedTarget(repoRoot, attempt, task, targetTree, verifyRecord)
   if (actualTree !== targetTree) {
     throw acceptanceError("accepted commit tree does not match verified target tree", { commitOid, actualTree, targetTree });
   }
-  if (!body.includes(trailer)) {
+  if (!body.split(/\r?\n/).some((line) => line.trim() === trailer)) {
     throw acceptanceError("accepted commit is missing attempt trailer", { commitOid, trailer });
   }
   return {
@@ -1416,6 +1607,186 @@ function commitAcceptedTarget(repoRoot, attempt, task, targetTree, verifyRecord)
     trailer,
     acceptedAt: new Date().toISOString(),
   };
+}
+
+function recordAcceptedAndProject(request, specDir, state, tasks, taskState, attempt, task, acceptance) {
+  attempt.state = "accepted";
+  attempt.promotion.stage = "accepted_recorded";
+  if (acceptance.commitOid) {
+    attempt.promotion.commitOid = acceptance.commitOid;
+    attempt.promotion.parent = acceptance.parent;
+    attempt.promotion.tree = acceptance.tree;
+  }
+  taskState.status = "accepted";
+  taskState.acceptance = acceptance;
+  writeState(specDir, state);
+  maybeCrash(request, "before-tracking");
+  projectTracking(specDir, state, tasks, task.taskId, acceptance);
+  maybeCrash(request, "after-tracking");
+  attempt.promotion.stage = "tracking_updated";
+  advanceAfterAccepted(state, tasks, task.taskId);
+  writeState(specDir, state);
+  return { ok: true, accepted: acceptance };
+}
+
+function resumeAcceptedProjection(request, specDir, state, tasks, taskState, attempt, task) {
+  const acceptance = taskState.acceptance;
+  if (!acceptance) {
+    throw acceptanceError("accepted promotion is missing acceptance evidence", { attemptId: attempt.attemptId });
+  }
+  return recordAcceptedAndProject(request, specDir, state, tasks, taskState, attempt, task, acceptance);
+}
+
+function preparePromotionIntent(request, specDir, repoRoot, state, attempt, task) {
+  const worktreePath = attempt.worktree?.path;
+  if (!worktreePath || !existsSync(worktreePath)) {
+    throw acceptanceError("attempt worktree is missing", { attemptId: attempt.attemptId, worktreePath });
+  }
+  assertAttemptFilesOnly(worktreePath, task);
+  let worktreeVerify = null;
+  let verifiedWorktreeTree = null;
+  let patchBytes = Buffer.alloc(0);
+  let targetBeforeManifest = {};
+  let targetAfterManifest = {};
+  if (task.taskType !== "verify") {
+    worktreeVerify = runAuthoritativeVerify(worktreePath, task, task.fields.Cwd.trim(), "worktree", state);
+    assertAttemptFilesOnly(worktreePath, task);
+    verifiedWorktreeTree = treeFromDeclaredFiles(worktreePath, task.files);
+    patchBytes = promotionPatch(repoRoot, attempt.worktree.targetHeadAtCreate, verifiedWorktreeTree);
+    targetBeforeManifest = contentManifest(repoRoot, task.files);
+    targetAfterManifest = contentManifest(worktreePath, task.files);
+  }
+  const intent = {
+    attemptId: attempt.attemptId,
+    taskId: task.taskId,
+    verifyCommand: task.fields.Verify,
+    verifyCwd: task.fields.Cwd.trim(),
+    verifyTimeoutSec: task.timeoutSec,
+    verifiedWorktreeTree,
+    targetHeadExpected: attempt.worktree.targetHeadAtCreate,
+    targetFilesExpectedClean: task.files,
+    commitTrailer: `Spec-Drive-Attempt: ${attempt.attemptId}`,
+    targetCommitMessage: task.fields.Commit.trim(),
+    stage: "intent_recorded",
+    worktreeVerify,
+    patchBase64: patchBytes.toString("base64"),
+    patchSha256: sha256(patchBytes),
+    targetBeforeManifest,
+    targetAfterManifest,
+  };
+  maybeCrash(request, "before-intent");
+  attempt.promotion = intent;
+  state.currentStage = "intent_recorded";
+  writeState(specDir, state);
+  maybeCrash(request, "after-intent");
+  return intent;
+}
+
+function ensurePromotionPatchState(repoRoot, state, attempt, task, intent) {
+  const head = runGit(repoRoot, ["rev-parse", "HEAD"], { errorCode: "external_change_error" });
+  if (head !== intent.targetHeadExpected) {
+    throw externalChangeError("target HEAD changed during promotion recovery", {
+      expected: intent.targetHeadExpected,
+      actual: head,
+    });
+  }
+  if (manifestMatches(repoRoot, intent.targetAfterManifest)) {
+    return "after";
+  }
+  if (!manifestMatches(repoRoot, intent.targetBeforeManifest)) {
+    throw externalChangeError("target files have external changes and do not match promotion before/after manifests", {
+      before: intent.targetBeforeManifest,
+      after: intent.targetAfterManifest,
+      actual: contentManifest(repoRoot, Object.keys(intent.targetBeforeManifest || {})),
+    });
+  }
+  requireTargetClean(repoRoot, state, task.taskId);
+  return "before";
+}
+
+function promoteAttempt(request, specDir, repoRoot, state, tasks, taskState, attempt, task) {
+  requireTaskLease(repoRoot, state, task, attempt);
+  const intent = attempt.promotion || preparePromotionIntent(request, specDir, repoRoot, state, attempt, task);
+  validatePromotionIntent(repoRoot, attempt, task);
+  const targetHead = runGit(repoRoot, ["rev-parse", "HEAD"], { errorCode: "external_change_error" });
+
+  if (task.taskType === "verify") {
+    requireTargetClean(repoRoot, state, task.taskId);
+    if (targetHead !== intent.targetHeadExpected) {
+      throw externalChangeError("target HEAD changed before checkpoint acceptance", {
+        expected: intent.targetHeadExpected,
+        actual: targetHead,
+      });
+    }
+    const targetVerify = runAuthoritativeVerify(repoRoot, task, task.fields.Cwd.trim(), "target", state);
+    const targetTree = runGit(repoRoot, ["rev-parse", "HEAD^{tree}"], { errorCode: "acceptance_error" });
+    const acceptance = {
+      taskId: task.taskId,
+      attemptId: attempt.attemptId,
+      command: targetVerify.command,
+      cwd: targetVerify.cwd,
+      timeoutSec: targetVerify.timeoutSec,
+      exitCode: targetVerify.exitCode,
+      verifiedTree: targetTree,
+      commitOid: null,
+      parent: targetHead,
+      tree: targetTree,
+      trailer: null,
+      acceptedAt: new Date().toISOString(),
+    };
+    return recordAcceptedAndProject(request, specDir, state, tasks, taskState, attempt, task, acceptance);
+  }
+
+  const existingAcceptance = reconcileTrailerCommit(repoRoot, state, attempt, task, intent.targetTree || intent.verifiedWorktreeTree, intent.targetVerify);
+  if (existingAcceptance) {
+    return recordAcceptedAndProject(request, specDir, state, tasks, taskState, attempt, task, existingAcceptance);
+  }
+
+  const patchState = ensurePromotionPatchState(repoRoot, state, attempt, task, intent);
+  if (patchState === "before") {
+    attempt.promotion.stage = "target_verified_clean";
+    writeState(specDir, state);
+    maybeCrash(request, "before-patch");
+    applyPromotionPatch(repoRoot, intent.patchBase64);
+    attempt.promotion.stage = "patch_applied";
+    writeState(specDir, state);
+    maybeCrash(request, "after-patch");
+  }
+
+  const changed = repoStatusPaths(repoRoot, { ignoreOwnedMetadata: true, state, taskId: task.taskId });
+  const outside = changed.filter((relPath) => !task.files.includes(relPath));
+  if (outside.length) {
+    throw acceptanceError("promotion changed files outside declared Files", { changedPaths: changed, outsidePaths: outside });
+  }
+  maybeCrash(request, "before-verify");
+  const targetVerify = runAuthoritativeVerify(repoRoot, task, task.fields.Cwd.trim(), "target", state);
+  const targetTree = treeFromDeclaredFiles(repoRoot, task.files);
+  if (targetTree !== intent.verifiedWorktreeTree) {
+    throw acceptanceError("target tree does not match verified worktree tree", {
+      targetTree,
+      verifiedWorktreeTree: intent.verifiedWorktreeTree,
+    });
+  }
+  attempt.promotion.stage = "target_verified";
+  attempt.promotion.targetVerify = targetVerify;
+  attempt.promotion.targetTree = targetTree;
+  writeState(specDir, state);
+  maybeCrash(request, "after-verify");
+
+  const postVerifyExisting = reconcileTrailerCommit(repoRoot, state, attempt, task, targetTree, targetVerify);
+  if (postVerifyExisting) {
+    return recordAcceptedAndProject(request, specDir, state, tasks, taskState, attempt, task, postVerifyExisting);
+  }
+  maybeCrash(request, "before-commit");
+  const acceptance = commitAcceptedTarget(repoRoot, attempt, task, targetTree, targetVerify);
+  maybeCrash(request, "after-commit-before-state");
+  attempt.promotion.stage = "target_committed";
+  attempt.promotion.commitOid = acceptance.commitOid;
+  attempt.promotion.parent = acceptance.parent;
+  attempt.promotion.tree = acceptance.tree;
+  writeState(specDir, state);
+  maybeCrash(request, "after-commit");
+  return recordAcceptedAndProject(request, specDir, state, tasks, taskState, attempt, task, acceptance);
 }
 
 function accept(request) {
@@ -1440,127 +1811,17 @@ function accept(request) {
     if (attempt.state === "accepted" && taskState.acceptance && attempt.promotion?.stage === "tracking_updated") {
       return { ok: true, accepted: taskState.acceptance };
     }
-    if (attempt.state !== "reported_complete") {
+    if (attempt.state === "accepted" && attempt.promotion?.stage === "accepted_recorded") {
+      return resumeAcceptedProjection(request, specDir, state, tasks, taskState, attempt, task);
+    }
+    if (attempt.state !== "reported_complete" && !attempt.promotion) {
       throw acceptanceError("attempt is not ready for acceptance", { attemptId, state: attempt.state });
     }
     if (!attempt.report || attempt.report.outcome !== "task_complete") {
       throw acceptanceError("attempt report is not complete", { attemptId });
     }
 
-    return withRepoPromotionLock(repoRoot, state, () => {
-      requireTaskLease(repoRoot, state, task, attempt);
-      if (attempt.promotion && attempt.promotion.stage && attempt.promotion.stage !== "tracking_updated") {
-        throw acceptanceError("unsupported in-progress promotion state requires recovery", {
-          attemptId,
-          stage: attempt.promotion.stage,
-        });
-      }
-
-      const worktreePath = attempt.worktree?.path;
-      if (!worktreePath || !existsSync(worktreePath)) {
-        throw acceptanceError("attempt worktree is missing", { attemptId, worktreePath });
-      }
-      assertAttemptFilesOnly(worktreePath, task);
-      let worktreeVerify = null;
-      let verifiedWorktreeTree = null;
-      if (task.taskType !== "verify") {
-        worktreeVerify = runAuthoritativeVerify(worktreePath, task, task.fields.Cwd.trim(), "worktree", state);
-        assertAttemptFilesOnly(worktreePath, task);
-        verifiedWorktreeTree = treeFromDeclaredFiles(worktreePath, task.files);
-      }
-      const targetHead = runGit(repoRoot, ["rev-parse", "HEAD"], { errorCode: "external_change_error" });
-      const intent = {
-        attemptId,
-        taskId: task.taskId,
-        verifyCommand: task.fields.Verify,
-        verifyCwd: task.fields.Cwd.trim(),
-        verifyTimeoutSec: task.timeoutSec,
-        verifiedWorktreeTree,
-        targetHeadExpected: attempt.worktree.targetHeadAtCreate,
-        targetFilesExpectedClean: task.files,
-        commitTrailer: `Spec-Drive-Attempt: ${attemptId}`,
-        targetCommitMessage: task.fields.Commit.trim(),
-        stage: "intent_recorded",
-        worktreeVerify,
-      };
-      attempt.promotion = intent;
-      state.currentStage = "intent_recorded";
-      writeState(specDir, state);
-
-      if (task.taskType === "verify") {
-        requireTargetClean(repoRoot, state, task.taskId);
-        if (targetHead !== attempt.worktree.targetHeadAtCreate) {
-          throw externalChangeError("target HEAD changed before checkpoint acceptance", {
-            expected: attempt.worktree.targetHeadAtCreate,
-            actual: targetHead,
-          });
-        }
-        const targetVerify = runAuthoritativeVerify(repoRoot, task, task.fields.Cwd.trim(), "target", state);
-        const targetTree = runGit(repoRoot, ["rev-parse", "HEAD^{tree}"], { errorCode: "acceptance_error" });
-        const acceptance = {
-          taskId: task.taskId,
-          attemptId,
-          command: targetVerify.command,
-          cwd: targetVerify.cwd,
-          timeoutSec: targetVerify.timeoutSec,
-          exitCode: targetVerify.exitCode,
-          verifiedTree: targetTree,
-          commitOid: null,
-          parent: targetHead,
-          tree: targetTree,
-          trailer: null,
-          acceptedAt: new Date().toISOString(),
-        };
-        attempt.state = "accepted";
-        attempt.promotion.stage = "accepted_recorded";
-        taskState.status = "accepted";
-        taskState.acceptance = acceptance;
-        writeState(specDir, state);
-        projectTracking(specDir, state, tasks, task.taskId, acceptance);
-        attempt.promotion.stage = "tracking_updated";
-        advanceAfterAccepted(state, tasks, task.taskId);
-        writeState(specDir, state);
-        return { ok: true, accepted: acceptance };
-      }
-
-      requireTargetClean(repoRoot, state, task.taskId);
-      if (targetHead !== attempt.worktree.targetHeadAtCreate) {
-        throw externalChangeError("target HEAD changed before acceptance", {
-          expected: attempt.worktree.targetHeadAtCreate,
-          actual: targetHead,
-        });
-      }
-      attempt.promotion.stage = "target_verified_clean";
-      writeState(specDir, state);
-
-      applyTreeDiff(repoRoot, attempt.worktree.targetHeadAtCreate, verifiedWorktreeTree);
-      attempt.promotion.stage = "patch_applied";
-      writeState(specDir, state);
-
-      const changed = repoStatusPaths(repoRoot, { ignoreOwnedMetadata: true, state, taskId: task.taskId });
-      const outside = changed.filter((relPath) => !task.files.includes(relPath));
-      if (outside.length) {
-        throw acceptanceError("promotion changed files outside declared Files", { changedPaths: changed, outsidePaths: outside });
-      }
-      const targetVerify = runAuthoritativeVerify(repoRoot, task, task.fields.Cwd.trim(), "target", state);
-      const targetTree = treeFromDeclaredFiles(repoRoot, task.files);
-      attempt.promotion.stage = "target_verified";
-      attempt.promotion.targetVerify = targetVerify;
-      attempt.promotion.targetTree = targetTree;
-      writeState(specDir, state);
-
-      const acceptance = commitAcceptedTarget(repoRoot, attempt, task, targetTree, targetVerify);
-      attempt.state = "accepted";
-      attempt.promotion.stage = "accepted_recorded";
-      taskState.status = "accepted";
-      taskState.acceptance = acceptance;
-      writeState(specDir, state);
-      projectTracking(specDir, state, tasks, task.taskId, acceptance);
-      attempt.promotion.stage = "tracking_updated";
-      advanceAfterAccepted(state, tasks, task.taskId);
-      writeState(specDir, state);
-      return { ok: true, accepted: acceptance };
-    });
+    return withRepoPromotionLock(repoRoot, state, () => promoteAttempt(request, specDir, repoRoot, state, tasks, taskState, attempt, task));
   });
 }
 
@@ -1587,11 +1848,7 @@ function status(request) {
   };
 }
 
-function resume(request) {
-  const specDir = resolveSpecDir(requireString(request, "specDir"));
-  const repoRoot = path.resolve(requireString(request, "repoRoot"));
-  const { tasksArtifact, tasks, requiredCoverage, state } = loadValidatedPlan(specDir, repoRoot);
-  ensureLedger(state, tasks, tasksArtifact.hash);
+function resumeSummary(tasks, requiredCoverage, state) {
   return {
     ok: true,
     phase: "execution",
@@ -1606,6 +1863,57 @@ function resume(request) {
       taskStates: state.taskStates,
     },
   };
+}
+
+function resumableAttempt(state) {
+  const candidates = [];
+  if (state.activeAttemptId && state.attempts?.[state.activeAttemptId]) {
+    candidates.push(state.attempts[state.activeAttemptId]);
+  }
+  const currentTask = state.currentTaskId ? state.taskStates?.[state.currentTaskId] : null;
+  if (currentTask?.latestAttemptId && state.attempts?.[currentTask.latestAttemptId]) {
+    candidates.push(state.attempts[currentTask.latestAttemptId]);
+  }
+  for (const taskState of Object.values(state.taskStates || {})) {
+    for (const attemptId of taskState.attempts || []) {
+      if (state.attempts?.[attemptId]) candidates.push(state.attempts[attemptId]);
+    }
+  }
+  const unique = [...new Map(candidates.map((attempt) => [attempt.attemptId, attempt])).values()];
+  return unique.find((attempt) => {
+    if (!attempt?.promotion) return attempt?.state === "reported_complete";
+    if (attempt.promotion.stage === "tracking_updated") return false;
+    if (attempt.state === "accepted" && attempt.promotion.stage === "accepted_recorded") return true;
+    return attempt.state === "reported_complete" || ["intent_recorded", "target_verified_clean", "patch_applied", "target_verified", "target_committed"].includes(attempt.promotion.stage);
+  }) || null;
+}
+
+function resume(request) {
+  const specDir = resolveSpecDir(requireString(request, "specDir"));
+  const repoRoot = path.resolve(requireString(request, "repoRoot"));
+  return withStateLock(specDir, () => {
+    const { tasksArtifact, tasks, requiredCoverage, state } = loadValidatedPlan(specDir, repoRoot);
+    ensureLedger(state, tasks, tasksArtifact.hash);
+    const attempt = resumableAttempt(state);
+    if (!attempt) {
+      return resumeSummary(tasks, requiredCoverage, state);
+    }
+    const task = taskById(tasks, attempt.taskId);
+    if (!task) {
+      throw requestError("attempt task is missing from current plan", { attemptId: attempt.attemptId, taskId: attempt.taskId });
+    }
+    const taskState = state.taskStates?.[task.taskId];
+    if (!taskState) {
+      throw requestError("attempt task is missing from ledger", { attemptId: attempt.attemptId, taskId: task.taskId });
+    }
+    if (attempt.state === "accepted" && attempt.promotion?.stage === "accepted_recorded") {
+      return resumeAcceptedProjection(request, specDir, state, tasks, taskState, attempt, task);
+    }
+    if (!attempt.report || attempt.report.outcome !== "task_complete") {
+      throw acceptanceError("attempt report is not complete", { attemptId: attempt.attemptId });
+    }
+    return withRepoPromotionLock(repoRoot, state, () => promoteAttempt(request, specDir, repoRoot, state, tasks, taskState, attempt, task));
+  });
 }
 
 try {

@@ -5,6 +5,97 @@
   "description": "State file that tracks spec-drive execution progress. Committed to git, collocated with spec artifacts.",
   "$comment": "Active project registry: ~/.spec-drive-active.json — format: {activePath: string, name: string, switchedAt: string (ISO 8601)}. Written by /spec-drive:switch. If absent, commands fall back to cwd scan for .spec-drive-state.json.",
   "$defs": {
+    "contentManifest": {
+      "type": "object",
+      "additionalProperties": {
+        "anyOf": [
+          { "type": "null" },
+          {
+            "type": "object",
+            "properties": {
+              "mode": { "type": "string", "pattern": "^[0-7]{3,4}$" },
+              "sha256": { "type": "string" },
+              "bytes": { "type": "integer", "minimum": 0 }
+            },
+            "required": ["mode", "sha256", "bytes"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "mode": { "const": "symlink" },
+              "target": { "type": "string" }
+            },
+            "required": ["mode", "target"],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "verifyRecord": {
+      "type": "object",
+      "properties": {
+        "command": { "type": "string" },
+        "cwd": { "type": "string" },
+        "timeoutSec": { "type": "integer", "minimum": 1 },
+        "exitCode": { "type": "integer" },
+        "timedOut": { "type": "boolean" },
+        "stdout": { "type": "string" },
+        "stderr": { "type": "string" }
+      },
+      "required": ["command", "cwd", "timeoutSec", "exitCode", "timedOut", "stdout", "stderr"],
+      "additionalProperties": false
+    },
+    "acceptanceRecord": {
+      "type": "object",
+      "properties": {
+        "taskId": { "type": "string" },
+        "attemptId": { "type": "string" },
+        "command": { "type": "string" },
+        "cwd": { "type": "string" },
+        "timeoutSec": { "type": "integer", "minimum": 1 },
+        "exitCode": { "type": "integer" },
+        "verifiedTree": { "type": "string" },
+        "commitOid": { "type": ["string", "null"] },
+        "parent": { "type": "string" },
+        "tree": { "type": "string" },
+        "trailer": { "type": ["string", "null"] },
+        "acceptedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["taskId", "attemptId", "command", "cwd", "timeoutSec", "exitCode", "verifiedTree", "commitOid", "parent", "tree", "trailer", "acceptedAt"],
+      "additionalProperties": false
+    },
+    "promotionIntent": {
+      "type": "object",
+      "properties": {
+        "attemptId": { "type": "string" },
+        "taskId": { "type": "string" },
+        "verifyCommand": { "type": "string" },
+        "verifyCwd": { "type": "string" },
+        "verifyTimeoutSec": { "type": "integer", "minimum": 1 },
+        "verifiedWorktreeTree": { "type": ["string", "null"] },
+        "targetHeadExpected": { "type": "string" },
+        "targetFilesExpectedClean": { "type": "array", "items": { "type": "string" } },
+        "commitTrailer": { "type": ["string", "null"] },
+        "targetCommitMessage": { "type": "string" },
+        "stage": {
+          "type": "string",
+          "enum": ["intent_recorded", "target_verified_clean", "patch_applied", "target_verified", "target_committed", "accepted_recorded", "tracking_updated"]
+        },
+        "worktreeVerify": { "anyOf": [{ "$ref": "#/$defs/verifyRecord" }, { "type": "null" }] },
+        "targetVerify": { "$ref": "#/$defs/verifyRecord" },
+        "targetTree": { "type": "string" },
+        "patchBase64": { "type": "string" },
+        "patchSha256": { "type": "string" },
+        "targetBeforeManifest": { "$ref": "#/$defs/contentManifest" },
+        "targetAfterManifest": { "$ref": "#/$defs/contentManifest" },
+        "commitOid": { "type": "string" },
+        "parent": { "type": "string" },
+        "tree": { "type": "string" }
+      },
+      "required": ["attemptId", "taskId", "verifyCommand", "verifyCwd", "verifyTimeoutSec", "targetHeadExpected", "targetFilesExpectedClean", "targetCommitMessage", "stage"],
+      "additionalProperties": false
+    },
     "activeRegistry": {
       "$id": "https://spec-drive/schemas/spec-drive-active.json",
       "title": "~/.spec-drive-active.json",
@@ -136,7 +227,7 @@
           "latestAttemptId": { "type": "string" },
           "dispatchFailures": { "type": "integer", "minimum": 0, "default": 0 },
           "executionAttempts": { "type": "integer", "minimum": 0, "default": 0 },
-          "acceptance": { "type": "object" }
+          "acceptance": { "$ref": "#/$defs/acceptanceRecord" }
         },
         "required": ["taskId", "status", "required", "attempts"],
         "additionalProperties": false
@@ -175,7 +266,7 @@
             "additionalProperties": false
           },
           "report": { "type": "object" },
-          "promotion": { "type": "object" }
+          "promotion": { "$ref": "#/$defs/promotionIntent" }
         },
         "required": ["attemptId", "taskId", "sequence", "dispatchBudgetUsed", "executionBudgetUsed", "globalBudgetUsed", "state", "worktree"],
         "additionalProperties": false
