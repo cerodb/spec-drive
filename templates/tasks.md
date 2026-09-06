@@ -11,6 +11,9 @@ shell: "bash"
 
 # Tasks: {{spec_name}}
 
+<!-- Verify may use Markdown code delimiters. Keep candidate files unchanged; direct temporary,
+cache, and coverage outputs to $SPEC_DRIVE_VERIFY_TMPDIR (also available as $TMPDIR). -->
+
 ## Phase 1: Make It Work (POC)
 
 <!-- Minimal working implementation. Hardcoded values are fine. Skip tests. Goal: prove the approach works end-to-end. Each task needs: Do (steps), Files (unique repo-relative paths), Traces (known AC/FR/NFR ids), an optional model: <tier> field placed after Traces and before Cwd (tier is one of light|standard|advanced|frontier — omit to inherit the default model), Cwd (repo-relative working directory), Done when (criteria), Verify (one non-destructive command), Timeout (positive integer seconds, without a unit), and Commit (message). After the task completes, the executor may record which tier actually ran as model_used: <tier>. -->

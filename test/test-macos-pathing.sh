@@ -109,13 +109,9 @@ for suite in hooks schema registrar cross-cli smoke; do
   fi
 done
 
-if SPEC_DRIVE_SYMLINK_TMPDIR_RUN=1 TMPDIR="$SYMLINK_ROOT/logical" \
-    bash test/test-execution-kernel.sh gate-poc contracts ledger-poc adapters >"$SYMLINK_ROOT/execution-kernel.log" 2>&1; then
-  ok "test-execution-kernel.sh passes under a symlinked temp root"
-else
-  fail "test-execution-kernel.sh fails under a symlinked temp root"
-  grep "ASSERTION FAILED:" "$SYMLINK_ROOT/execution-kernel.log" | head -5 | sed 's/^/      /' || true
-fi
+# test:release exercises actual symlink aliases for kernel specDir and repoRoot.
+# The older kernel harness uses a fixed directory, so rerunning it with TMPDIR
+# changed would repeat work without testing those aliases.
 
 echo ""
 echo "Passed: $PASS | Failed: $FAIL"

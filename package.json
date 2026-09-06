@@ -1,14 +1,16 @@
 {
   "name": "spec-drive",
-  "version": "1.4.1",
+  "version": "2.0.0",
   "description": "Spec-driven development: idea -> research -> requirements -> design -> tasks -> autonomous execution with quality gates.",
   "license": "MIT",
   "scripts": {
-    "test": "bash test/test-structure.sh && bash test/test-hooks.sh && bash test/test-commands.sh && bash test/test-schema.sh && bash test/test-routing.sh && bash test/test-registrar.sh && bash test/test-public-clean.sh && bash test/test-cross-cli.sh && bash test/test-execution-kernel.sh gate-poc contracts ledger-poc adapters && bash test/test-smoke.sh && bash test/test-macos-pathing.sh",
+    "test": "bash test/test-structure.sh && bash test/test-hooks.sh && bash test/test-commands.sh && bash test/test-schema.sh && npm run test:release && bash test/test-routing.sh && bash test/test-registrar.sh && bash test/test-public-clean.sh && bash test/test-cross-cli.sh && bash test/test-execution-kernel.sh gate-poc contracts ledger-poc adapters && bash test/test-smoke.sh && bash test/test-macos-pathing.sh",
     "test:structure": "bash test/test-structure.sh",
     "test:hooks": "bash test/test-hooks.sh",
     "test:commands": "bash test/test-commands.sh",
     "test:schema": "bash test/test-schema.sh",
+    "test:schema-real": "node test/test-schema-real.mjs",
+    "test:release": "node test/test-kernel-release.mjs && node test/test-kernel-markdown.mjs && node test/test-kernel-routing.mjs && node test/test-schema-real.mjs",
     "test:routing": "bash test/test-routing.sh",
     "test:registrar": "bash test/test-registrar.sh",
     "test:cross-cli": "bash test/test-cross-cli.sh",
@@ -16,5 +18,12 @@
     "test:smoke": "bash test/test-smoke.sh",
     "test:public-clean": "bash test/test-public-clean.sh",
     "test:macos-pathing": "bash test/test-macos-pathing.sh"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1"
   }
 }

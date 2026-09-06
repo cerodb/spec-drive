@@ -58,6 +58,24 @@ artifacts. Execution uses cooperative locks and task leases so one coordinator o
 time, while dirty target work, unrelated metadata, and retry worktree bytes are preserved instead of
 being reset or deleted.
 
+Specs may be versioned inside the target repository. The kernel recognizes its exact state
+file and the task/progress projections whose bytes match its recorded hashes. Product commits
+contain declared task files only; state and tracking remain local changes for a separate operator
+checkpoint. Staged metadata and externally edited projections still block promotion.
+
+Verify may use an outer Markdown code span. Its command must leave candidate files, HEAD and
+the index unchanged. Temporary test outputs belong in `$SPEC_DRIVE_VERIFY_TMPDIR` (also exposed
+as `$TMPDIR`), an isolated directory removed after each Verify invocation. Configure coverage
+and cache output paths accordingly; ignored repository files are still protected.
+
+A failed test records authoritative evidence and permits a new budgeted attempt in the same
+worktree. A failed target verification reverses only the exact owned promotion patch after
+checking its bytes, HEAD and index. Timeouts, missing executables and candidate mutations require
+explicit recovery. Repeating acceptance does not rerun a failed verification indefinitely.
+
+The next version is **2.0.0**, currently an unpublished candidate. See the
+[upgrade notes](docs/upgrading-2.0-en.md) for compatibility and checkpoint guidance.
+
 ## Adaptive Model Router
 
 Spec-Drive supports optional `model:` task metadata using abstract tiers: `light`,

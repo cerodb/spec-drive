@@ -1,5 +1,18 @@
 # Changelog
 
+## v2.0.0 (unreleased)
+
+- Introduce a persistent execution ledger keyed by task and attempt IDs, shared across CLI adapters.
+- Require explicit artifact approvals and authoritative verification before acceptance.
+- Preserve attempt worktrees, separate dispatch/execution budgets, and reconcile interrupted promotion.
+- Support versioned specs inside the target repository, lifecycle transitions through completion,
+  Markdown Verify commands, and routing through the configured CLI profile.
+- Record failed verification and allow budgeted correction attempts. Provide an external temporary
+  directory for test outputs while preserving candidate mutation checks.
+- Validate real emitted states against JSON Schema using development-only Ajv dependencies.
+- Require Node.js >=18, serialize parallel-marked tasks, and reject index-only legacy execution
+  state without automatic migration. See [upgrade notes](docs/upgrading-2.0-en.md).
+
 ## v1.4.1 — 2026-08-18
 
 Test-harness maintenance. **No runtime change.**

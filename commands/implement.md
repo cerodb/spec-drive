@@ -46,13 +46,13 @@ Request the next kernel-selected task:
 {"op":"next","specDir":"<specDir>","repoRoot":"<repoRoot>","actor":"implement"}
 ```
 
-The response `dispatch` is the complete trusted dispatch envelope. Forward its exact `taskId`, `attemptId`, `taskType`, `worktreePath`, Verify metadata, traces, and the matching task block to the adapter. The executor cwd is `worktreePath`, not the target repository.
+The response `dispatch` is the complete trusted dispatch envelope. Forward its exact `taskId`, `attemptId`, `taskType`, `worktreePath`, Verify metadata, traces, `mechanism`, `model`, `cmd`, and the matching task block to the adapter. The executor cwd is `worktreePath`, not the target repository.
 
 The kernel serializes `[P]` tasks in this release. Do not construct parallel groups or per-index progress files.
 
 ### 3. Dispatch and capture start evidence
 
-For `taskType=regular`, use `agents/executor.md` for native Agent dispatch or `agents/executor-subprocess.md` for a subprocess profile. For `taskType=verify`, use `agents/qa-engineer.md`.
+For `taskType=regular`, dispatch from the kernel-resolved envelope: use `agents/executor.md` when `mechanism=agent`, `agents/executor-subprocess.md` when `mechanism=subprocess`, and the caller's native execution context when `mechanism=inherit`. `model` and `cmd` are already resolved from `resolve-model.sh`; do not infer a mechanism from the task's optional `model` field or resolve a profile again. For `taskType=verify`, use `agents/qa-engineer.md`.
 
 Capture adapter start evidence independently from executor output:
 
@@ -101,7 +101,7 @@ When `report` returns `state=reported_complete`, request:
 {"op":"accept","specDir":"<specDir>","repoRoot":"<repoRoot>","attemptId":"<attemptId>"}
 ```
 
-Only `accept` may run final Verify, validate declared-file ownership, promote worktree bytes, create the implementation commit, project the checkbox/progress tracking, advance `currentTaskId`, and close the run. An accept failure is reported verbatim and resumed through `resume`; do not run an alternate Verify or perform partial Git/tracking repair.
+Only `accept` may run final Verify, validate declared-file ownership, promote worktree bytes, create the implementation commit, project the checkbox/progress tracking, advance `currentTaskId`, and close the run. Report an accept failure verbatim, then inspect `resume`. A failed test records authoritative evidence and returns the ledger to `ready` for a new budgeted attempt. Timeout, environment failure or candidate mutation requires explicit `recover` evidence after the cause is addressed. Interrupted promotion is reconciled through `resume`. Do not run an alternate Verify or perform partial Git/tracking repair.
 
 For `reported_blocked`, `indeterminate`, budget exhaustion, artifact errors, or external changes, display the kernel error and recovery action. Loop only when the kernel returns `currentStage=ready`.
 

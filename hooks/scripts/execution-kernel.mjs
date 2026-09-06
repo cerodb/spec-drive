@@ -19,9 +19,12 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
 const STATE_FILE = ".spec-drive-state.json";
+// Request-local snapshots are never persisted as part of the public ledger.
+const stateContexts = new WeakMap();
 const ARTIFACTS = {
   requirements: "requirements.md",
   design: "design.md",
@@ -144,7 +147,7 @@ function resolveSpecDir(specDir) {
   if (!existsSync(resolved)) {
     throw artifactError(`specDir does not exist: ${specDir}`, { artifact: "specDir" });
   }
-  return resolved;
+  return realpathSync(resolved);
 }
 
 function readBytes(filePath, artifact) {
@@ -153,6 +156,11 @@ function readBytes(filePath, artifact) {
   } catch {
     throw artifactError(`missing artifact: ${artifact}`, { artifact });
   }
+}
+
+function resolveRepoRoot(value) {
+  const resolved = path.resolve(value);
+  return existsSync(resolved) ? realpathSync(resolved) : resolved;
 }
 
 function sha256(bytes) {
@@ -297,6 +305,7 @@ function readState(specDir) {
       throw new Error("state is not an object");
     }
     state.approvals ||= {};
+    stateContexts.set(state, { specDir, stateBytes: readFileSync(file) });
     return state;
   } catch (error) {
     throw artifactError(`invalid kernel state: ${error.message}`, { artifact: STATE_FILE });
@@ -332,7 +341,7 @@ function assertStateMetadata(state, specDir) {
       required: STATE_METADATA_FIELDS,
     });
   }
-  if (state.basePath !== path.resolve(specDir)) {
+  if (!existsSync(state.basePath) || realpathSync(state.basePath) !== realpathSync(specDir)) {
     throw artifactError("kernel state basePath does not match specDir", { artifact: STATE_FILE });
   }
   if (!STATE_PHASES.has(state.phase)) {
@@ -403,6 +412,9 @@ function writeState(specDir, state) {
     closeSync(fd);
   }
   renameSync(tmp, file);
+  const context = stateContexts.get(state) || { specDir };
+  context.stateBytes = readFileSync(file);
+  stateContexts.set(state, context);
   try {
     const dirFd = openSync(dir, "r");
     try {
@@ -535,7 +547,7 @@ function taskSemanticRecord(task) {
   const fields = {};
   for (const [field, value] of Object.entries(task.fields)) {
     if (MUTABLE_TRACKING_FIELDS.has(field)) continue;
-    fields[field] = value.trim();
+    fields[field] = field === "Verify" ? normalizeVerifyCommand(value) : value.trim();
   }
   return {
     taskId: task.taskId,
@@ -584,6 +596,13 @@ function parseList(value) {
     .split(/[\n,]/)
     .map((item) => item.replace(/^\s*-\s*/, "").trim())
     .filter(Boolean);
+}
+
+function normalizeVerifyCommand(value) {
+  const command = value.trim();
+  const match = command.match(/^(`+)([\s\S]*)\1$/);
+  if (!match) return value;
+  return match[2].trim();
 }
 
 function validateRelativePath(repoRoot, relPath, taskId, fieldName) {
@@ -698,7 +717,25 @@ function knownOwnedMetadataPaths(state = {}, taskId = null) {
   return paths;
 }
 
-function isOwnedKernelMetadataPath(relPath, state = {}, taskId = null) {
+function ownedSpecMetadataPaths(root, state) {
+  const context = stateContexts.get(state);
+  if (!root || !context) return [];
+  const specRel = path.relative(realpathSync(root), context.specDir);
+  if (specRel === ".." || specRel.startsWith(`..${path.sep}`) || path.isAbsolute(specRel)) return [];
+  const rel = (name) => path.join(specRel, name).split(path.sep).join("/");
+  const owned = [];
+  const file = statePath(context.specDir);
+  if (context.stateBytes && existsSync(file) && readFileSync(file).equals(context.stateBytes)) owned.push(rel(STATE_FILE));
+  const projection = state.trackingProjection;
+  for (const [name, digest] of [[ARTIFACTS.tasks, projection?.tasksSha256], [".progress.md", projection?.progressSha256]]) {
+    const projected = path.join(context.specDir, name);
+    if (digest && existsSync(projected) && sha256(readFileSync(projected)) === digest) owned.push(rel(name));
+  }
+  return owned;
+}
+
+function isOwnedKernelMetadataPath(relPath, state = {}, taskId = null, root = null) {
+  if (ownedSpecMetadataPaths(root, state).includes(relPath)) return true;
   for (const owned of knownOwnedMetadataPaths(state, taskId)) {
     if (relPath === owned || (owned.includes("/worktrees/") && relPath.startsWith(`${owned}/`))) {
       return true;
@@ -707,9 +744,11 @@ function isOwnedKernelMetadataPath(relPath, state = {}, taskId = null) {
   return false;
 }
 
-function assertFilesDoNotOverlapOwnedMetadata(task, state) {
+function assertFilesDoNotOverlapOwnedMetadata(task, state, repoRoot) {
   for (const file of task.files || []) {
-    if (isOwnedKernelMetadataPath(file, state, task.taskId)) {
+    const specDir = stateContexts.get(state)?.specDir;
+    const specMetadata = specDir && [STATE_FILE, ARTIFACTS.tasks, ".progress.md"].some((name) => path.resolve(repoRoot, file) === path.join(specDir, name));
+    if (specMetadata || isOwnedKernelMetadataPath(file, state, task.taskId, repoRoot)) {
       throw artifactError("Files may not overlap kernel-owned metadata", { taskId: task.taskId, path: file });
     }
   }
@@ -720,9 +759,12 @@ function repoStatusPaths(repoRoot, { ignoreOwnedMetadata = false, state = {}, ta
     errorCode: "external_change_error",
     raw: true,
   });
-  return parsePorcelainZ(output).filter(
-    (relPath) => !(ignoreOwnedMetadata && isOwnedKernelMetadataPath(relPath, state, taskId)),
-  );
+  const staged = new Set(parsePorcelainZ(output).filter((relPath) => {
+    const indexEntry = String(output).split("\0").find((entry) => entry.slice(3) === relPath);
+    return indexEntry && indexEntry[0] !== " " && indexEntry[0] !== "?";
+  }));
+  return parsePorcelainZ(output).filter((relPath) =>
+    !(ignoreOwnedMetadata && !staged.has(relPath) && isOwnedKernelMetadataPath(relPath, state, taskId, repoRoot)));
 }
 
 function worktreeOwnershipManifest(worktreePath, state = {}, taskId = null) {
@@ -765,7 +807,7 @@ function assertCwdContained(root, cwd, label) {
 
 function ensureWorktree(repoRoot, state, task) {
   requireGitRepo(repoRoot);
-  assertFilesDoNotOverlapOwnedMetadata(task, state);
+  assertFilesDoNotOverlapOwnedMetadata(task, state, repoRoot);
   requireTargetClean(repoRoot, state, task.taskId);
   const worktreePath = path.join(repoRoot, ".spec-drive", "worktrees", state.runId, task.taskId);
   const branch = `spec-drive/${state.runId}/${task.taskId}`;
@@ -954,14 +996,22 @@ function sameJson(left, right) {
 }
 
 function runVerify(command, cwd, timeoutSec) {
-  const result = spawnSync(command, {
+  // Suites may write disposable outputs here without changing the candidate.
+  const outputDir = mkdtempSync(path.join(realpathSync(tmpdir()), "spec-drive-verify-"));
+  let result;
+  try {
+  result = spawnSync(command, {
     cwd,
     shell: true,
     encoding: "utf8",
     timeout: timeoutSec * 1000,
     killSignal: "SIGTERM",
     maxBuffer: 10 * 1024 * 1024,
+    env: { ...process.env, TMPDIR: outputDir, SPEC_DRIVE_VERIFY_TMPDIR: outputDir },
   });
+  } finally {
+    rmSync(outputDir, { recursive: true, force: true });
+  }
   return {
     command,
     cwd,
@@ -988,17 +1038,17 @@ function runAuthoritativeVerify(root, task, cwdRel, label, state = {}) {
   const record = runVerify(task.fields.Verify, cwd, task.timeoutSec);
   const after = completeCandidateManifest(root, state, task.taskId);
   const gitAfter = headAndIndexState(root);
-  if (record.timedOut) {
-    throw acceptanceError(`${label} Verify timed out`, { verify: record });
-  }
-  if (record.exitCode !== 0) {
-    throw acceptanceError(`${label} Verify failed`, { verify: record });
-  }
   if (!sameJson(before, after)) {
-    throw acceptanceError(`${label} Verify mutated candidate tree`, { before, after, verify: record });
+    throw acceptanceError(`${label} Verify mutated candidate tree`, { before, after, verify: record, location: label, failureClass: "verify_error" });
   }
   if (!sameJson(gitBefore, gitAfter)) {
-    throw acceptanceError(`${label} Verify mutated HEAD or index`, { before: gitBefore, after: gitAfter, verify: record });
+    throw acceptanceError(`${label} Verify mutated HEAD or index`, { before: gitBefore, after: gitAfter, verify: record, location: label, failureClass: "verify_error" });
+  }
+  if (record.timedOut || record.exitCode !== 0) {
+    throw acceptanceError(`${label} Verify ${record.timedOut ? "timed out" : "failed"}`, {
+      verify: record, location: label,
+      failureClass: record.timedOut || [126, 127].includes(record.exitCode) ? "env_error" : "logic_error",
+    });
   }
   return record;
 }
@@ -1031,8 +1081,8 @@ function promotionPatch(targetRepoPath, baseCommit, tree) {
   return diff.stdout;
 }
 
-function applyPromotionPatch(targetRepoPath, patchBase64) {
-  const apply = spawnSync("git", ["-C", targetRepoPath, "apply", "--binary", "--index"], {
+function applyPromotionPatch(targetRepoPath, patchBase64, reverse = false) {
+  const apply = spawnSync("git", ["-C", targetRepoPath, "apply", "--binary", "--index", ...(reverse ? ["--reverse"] : [])], {
     input: Buffer.from(patchBase64 || "", "base64"),
     encoding: "buffer",
     env: { ...process.env },
@@ -1080,6 +1130,8 @@ function projectTracking(specDir, state, tasks, taskId, acceptance) {
     progressFile,
     acceptedCount,
     totalTasks: tasks.length,
+    tasksSha256: sha256(readFileSync(tasksFile)),
+    progressSha256: sha256(readFileSync(progressFile)),
     updatedAt: new Date().toISOString(),
   };
 }
@@ -1097,7 +1149,11 @@ function validateTask(task, repoRoot, knownTraces) {
   if (!Number.isInteger(timeout) || timeout <= 0) {
     throw artifactError("Timeout must be a positive integer", { taskId: task.taskId });
   }
-  if (task.fields.Verify.includes(";")) {
+  const verifyCommand = normalizeVerifyCommand(task.fields.Verify);
+  if (verifyCommand === "") {
+    throw artifactError("Verify must contain a command", { taskId: task.taskId });
+  }
+  if (verifyCommand.includes(";")) {
     throw artifactError("Verify must be a single command without semicolon separators", { taskId: task.taskId });
   }
   validateRelativePath(repoRoot, task.fields.Cwd.trim(), task.taskId, "Cwd");
@@ -1134,7 +1190,7 @@ function validateTask(task, repoRoot, knownTraces) {
       throw artifactError(`unknown trace reference '${trace}'`, { taskId: task.taskId, trace });
     }
   }
-  return { ...task, timeoutSec: timeout, traces, files };
+  return { ...task, fields: { ...task.fields, Verify: verifyCommand }, timeoutSec: timeout, traces, files };
 }
 
 function requireApproval(state, artifact, actualHash) {
@@ -1186,10 +1242,14 @@ function ensureLedger(state, tasks, tasksHash) {
   state.runId ||= `run-${createHash("sha256").update(`${tasksHash}:${state.basePath || ""}`).digest("hex").slice(0, 12)}`;
   state.planRevision ||= tasksHash;
   state.taskOrder ||= state.approvals?.tasks?.taskOrder || tasks.map((task) => task.taskId);
-  state.currentTaskId ||= state.taskOrder.find((taskId) => getTaskState(state, taskId)?.status !== "accepted")
-    || state.taskOrder[0]
-    || tasks[0]?.taskId
-    || null;
+  // `null` is the durable identity of a completed ledger. Do not use `||=`
+  // here: it turns that terminal value back into the first task on resume.
+  if (state.currentTaskId === undefined) {
+    state.currentTaskId = state.taskOrder.find((taskId) => getTaskState(state, taskId)?.status !== "accepted")
+      || state.taskOrder[0]
+      || tasks[0]?.taskId
+      || null;
+  }
   state.currentStage ||= "ready";
   state.taskStates ||= {};
   state.attempts ||= {};
@@ -1255,7 +1315,7 @@ function loadValidatedPlan(specDir, repoRoot) {
 
 function preflight(request) {
   const specDir = resolveSpecDir(requireString(request, "specDir"));
-  const repoRoot = path.resolve(requireString(request, "repoRoot"));
+  const repoRoot = resolveRepoRoot(requireString(request, "repoRoot"));
   if (!existsSync(repoRoot)) {
     throw artifactError(`repoRoot does not exist: ${request.repoRoot}`, { artifact: "repoRoot" });
   }
@@ -1333,6 +1393,31 @@ function nextTask(tasks, state) {
   return tasks.find((task) => getTaskState(state, task.taskId)?.status !== "accepted") || null;
 }
 
+function resolveDispatchRouting(specDir, modelTier) {
+  const resolver = path.join(path.dirname(fileURLToPath(import.meta.url)), "resolve-model.sh");
+  const result = spawnSync("bash", [resolver, modelTier || ""], {
+    cwd: specDir,
+    encoding: "utf8",
+    env: { ...process.env },
+  });
+  if (result.error || result.status !== 0) {
+    throw new KernelFailure("dispatch_error", "model routing could not be resolved", {
+      detail: result.error?.message || result.stderr?.trim() || "resolve-model.sh failed",
+    });
+  }
+  const routing = { mechanism: "", model: "", cmd: "" };
+  for (const line of result.stdout.split(/\r?\n/)) {
+    const match = line.match(/^(mechanism|model|cmd)=(.*)$/);
+    if (match) routing[match[1]] = match[2];
+  }
+  if (!new Set(["agent", "subprocess", "inherit"]).has(routing.mechanism)) {
+    throw new KernelFailure("dispatch_error", "model resolver returned an invalid mechanism", {
+      mechanism: routing.mechanism || null,
+    });
+  }
+  return routing;
+}
+
 function interruptedPromotionAttempt(state) {
   return Object.values(state.attempts || {}).find((attempt) => {
     const stage = attempt?.promotion?.stage;
@@ -1342,7 +1427,7 @@ function interruptedPromotionAttempt(state) {
 
 function next(request) {
   const specDir = resolveSpecDir(requireString(request, "specDir"));
-  const repoRoot = path.resolve(requireString(request, "repoRoot"));
+  const repoRoot = resolveRepoRoot(requireString(request, "repoRoot"));
   const actor = requireString(request, "actor");
   if (!new Set(["implement", "stop-watcher"]).has(actor)) {
     throw requestError(`unsupported next actor: ${actor}`);
@@ -1351,6 +1436,11 @@ function next(request) {
     const { tasksArtifact, tasks, state } = loadValidatedPlan(specDir, repoRoot);
     initializeFreshStateMetadata(state, specDir, "execution");
     ensureLedger(state, tasks, tasksArtifact.hash);
+    if (state.phase !== "completed") {
+      state.phase = "execution";
+      // Stop-watcher uses the persisted lifecycle phase to find resumable work.
+      writeState(specDir, state);
+    }
     const interrupted = interruptedPromotionAttempt(state);
     if (interrupted) {
       throw requestError("unsupported in-progress promotion state requires recovery", {
@@ -1388,10 +1478,12 @@ function next(request) {
     if (!task) {
       state.currentStage = "completed";
       state.currentTaskId = null;
+      state.phase = "completed";
       writeState(specDir, state);
       return { ok: true, phase: "execution", plan: buildPlanSummary(tasks, new Set(), state) };
     }
     const taskState = state.taskStates[task.taskId];
+    const routing = resolveDispatchRouting(specDir, task.fields.model?.trim());
     if (state.budgets.globalBudgetUsed >= state.budgets.maxGlobalOperations) {
       throw new KernelFailure("execution_error", "global operation budget exhausted", { taskId: task.taskId });
     }
@@ -1443,7 +1535,9 @@ function next(request) {
         taskId: task.taskId,
         attemptId,
         taskType: task.taskType,
-        mechanism: task.fields.model ? "subprocess" : "inherit",
+        mechanism: routing.mechanism,
+        model: routing.model,
+        cmd: routing.cmd,
         worktreePath,
         targetRepoPath: repoRoot,
         promptContractPath: path.join(specDir, "tasks.md"),
@@ -1598,6 +1692,7 @@ function advanceAfterAccepted(state, tasks, taskId) {
   const fallback = tasks.find((task) => getTaskState(state, task.taskId)?.status !== "accepted")?.taskId || null;
   state.currentTaskId = nextId || fallback;
   state.currentStage = state.currentTaskId ? "ready" : "completed";
+  state.phase = state.currentTaskId ? "execution" : "completed";
   state.activeAttemptId = null;
 }
 
@@ -1913,9 +2008,57 @@ function promoteAttempt(request, specDir, repoRoot, state, tasks, taskState, att
   return recordAcceptedAndProject(request, specDir, state, tasks, taskState, attempt, task, acceptance);
 }
 
+function retireFailedPromotion(repoRoot, state, attempt, task) {
+  const intent = attempt.promotion;
+  if (!intent) return;
+  validatePromotionIntent(repoRoot, attempt, task);
+  const patchState = task.taskType === "verify" ? "before" : ensurePromotionPatchState(repoRoot, state, attempt, task, intent);
+  if (patchState === "after" && intent.patchBase64) {
+    const dirty = repoStatusPaths(repoRoot, { ignoreOwnedMetadata: true, state, taskId: task.taskId });
+    const actual = headAndIndexState(repoRoot);
+    if (dirty.some((file) => !task.files.includes(file)) || actual.index !== intent.verifiedWorktreeTree || actual.head !== intent.targetHeadExpected) {
+      throw externalChangeError("failed Verify requires recovery; target no longer matches the owned promotion", { attemptId: attempt.attemptId });
+    }
+    // Reverse only the exact patch whose bytes and index were just checked.
+    // The executor's worktree remains intact for the next attempt.
+    applyPromotionPatch(repoRoot, intent.patchBase64, true);
+    attempt.verificationFailure.promotionRolledBack = true;
+  }
+  delete attempt.promotion;
+}
+
+function promoteWithFailureRecording(request, specDir, repoRoot, state, tasks, taskState, attempt, task) {
+  try {
+    return promoteAttempt(request, specDir, repoRoot, state, tasks, taskState, attempt, task);
+  } catch (error) {
+    if (!error.extra?.verify || !error.extra?.failureClass) throw error;
+    const failureClass = error.extra.failureClass;
+    attempt.verificationFailure = {
+      failureClass, verify: error.extra.verify, location: error.extra.location,
+      detectedAt: new Date().toISOString(),
+    };
+    attempt.state = "reported_blocked";
+    taskState.status = "blocked";
+    state.activeAttemptId = null;
+    state.lastFailureClass = failureClass;
+    state.currentStage = "recovery_required";
+    writeState(specDir, state);
+    if (failureClass !== "verify_error") {
+      retireFailedPromotion(repoRoot, state, attempt, task);
+      if (failureClass === "logic_error") {
+        attempt.state = "abandoned";
+        taskState.status = "pending";
+        state.currentStage = "ready";
+      }
+      writeState(specDir, state);
+    }
+    throw error;
+  }
+}
+
 function accept(request) {
   const specDir = resolveSpecDir(requireString(request, "specDir"));
-  const repoRoot = path.resolve(requireString(request, "repoRoot"));
+  const repoRoot = resolveRepoRoot(requireString(request, "repoRoot"));
   const attemptId = requireString(request, "attemptId");
   return withStateLock(specDir, () => {
     const { tasksArtifact, tasks, state } = loadValidatedPlan(specDir, repoRoot);
@@ -1932,6 +2075,9 @@ function accept(request) {
     if (!taskState) {
       throw requestError("attempt task is missing from ledger", { attemptId, taskId: task.taskId });
     }
+    if (attempt.verificationFailure && attempt.state !== "accepted") {
+      throw acceptanceError("failed Verify requires a new attempt or explicit recovery", { attemptId, state: attempt.state });
+    }
     if (attempt.state === "accepted" && taskState.acceptance && attempt.promotion?.stage === "tracking_updated") {
       return { ok: true, accepted: taskState.acceptance };
     }
@@ -1945,7 +2091,7 @@ function accept(request) {
       throw acceptanceError("attempt report is not complete", { attemptId });
     }
 
-    return withRepoPromotionLock(repoRoot, state, () => promoteAttempt(request, specDir, repoRoot, state, tasks, taskState, attempt, task));
+    return withRepoPromotionLock(repoRoot, state, () => promoteWithFailureRecording(request, specDir, repoRoot, state, tasks, taskState, attempt, task));
   });
 }
 
@@ -2005,6 +2151,7 @@ function resumableAttempt(state) {
   }
   const unique = [...new Map(candidates.map((attempt) => [attempt.attemptId, attempt])).values()];
   return unique.find((attempt) => {
+    if (attempt?.verificationFailure && attempt.state !== "accepted") return false;
     if (!attempt?.promotion) return attempt?.state === "reported_complete";
     if (attempt.promotion.stage === "tracking_updated") return false;
     if (attempt.state === "accepted" && attempt.promotion.stage === "accepted_recorded") return true;
@@ -2014,7 +2161,7 @@ function resumableAttempt(state) {
 
 function resume(request) {
   const specDir = resolveSpecDir(requireString(request, "specDir"));
-  const repoRoot = path.resolve(requireString(request, "repoRoot"));
+  const repoRoot = resolveRepoRoot(requireString(request, "repoRoot"));
   return withStateLock(specDir, () => {
     const { tasksArtifact, tasks, requiredCoverage, state } = loadValidatedPlan(specDir, repoRoot);
     ensureLedger(state, tasks, tasksArtifact.hash);
@@ -2042,7 +2189,7 @@ function resume(request) {
     if (!attempt.report || attempt.report.outcome !== "task_complete") {
       throw acceptanceError("attempt report is not complete", { attemptId: attempt.attemptId });
     }
-    return withRepoPromotionLock(repoRoot, state, () => promoteAttempt(request, specDir, repoRoot, state, tasks, taskState, attempt, task));
+    return withRepoPromotionLock(repoRoot, state, () => promoteWithFailureRecording(request, specDir, repoRoot, state, tasks, taskState, attempt, task));
   });
 }
 
@@ -2064,7 +2211,7 @@ function recover(request) {
       throw requestError("attempt task is missing from ledger", { attemptId, taskId: attempt.taskId });
     }
     const recoverable = attempt.state === "indeterminate"
-      || (attempt.state === "reported_blocked" && attempt.report?.failureClass === "env_error");
+      || (attempt.state === "reported_blocked" && (attempt.report?.failureClass === "env_error" || attempt.verificationFailure));
     if (!recoverable) {
       throw requestError("attempt is not in a recoverable state", {
         attemptId,
@@ -2075,6 +2222,12 @@ function recover(request) {
     if (attempt.worktree?.path && existsSync(attempt.worktree.path)) {
       const expected = attempt.ownership?.afterReport || attempt.ownership?.beforeDispatch;
       assertWorktreeManifestUnchanged(attempt.worktree.path, expected, state, attempt.taskId, "recover");
+    }
+    if (attempt.verificationFailure && attempt.promotion) {
+      const repoRoot = resolveRepoRoot(requireString(request, "repoRoot"));
+      const { tasks } = loadValidatedPlan(specDir, repoRoot);
+      const task = taskById(tasks, attempt.taskId);
+      withRepoPromotionLock(repoRoot, state, () => retireFailedPromotion(repoRoot, state, attempt, task));
     }
     attempt.recovery = {
       evidence: evidence.trim(),

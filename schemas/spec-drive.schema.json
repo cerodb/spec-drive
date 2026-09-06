@@ -164,6 +164,8 @@
         "progressFile": { "type": "string" },
         "acceptedCount": { "type": "integer", "minimum": 0 },
         "totalTasks": { "type": "integer", "minimum": 0 },
+        "tasksSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "progressSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["tasksFile", "progressFile", "acceptedCount", "totalTasks", "updatedAt"],
@@ -348,6 +350,18 @@
           },
           "report": { "$ref": "#/$defs/reportRecord" },
           "recovery": { "$ref": "#/$defs/recoveryRecord" },
+          "verificationFailure": {
+            "type": "object",
+            "properties": {
+              "failureClass": { "type": "string", "enum": ["logic_error", "env_error", "verify_error"] },
+              "verify": { "$ref": "#/$defs/verifyRecord" },
+              "location": { "type": "string", "enum": ["worktree", "target"] },
+              "detectedAt": { "type": "string", "format": "date-time" },
+              "promotionRolledBack": { "type": "boolean" }
+            },
+            "required": ["failureClass", "verify", "location", "detectedAt"],
+            "additionalProperties": false
+          },
           "promotion": { "$ref": "#/$defs/promotionIntent" }
         },
         "required": ["attemptId", "taskId", "sequence", "dispatchBudgetUsed", "executionBudgetUsed", "globalBudgetUsed", "state", "actor", "adapterStart", "worktree"],
