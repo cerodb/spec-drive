@@ -50,6 +50,7 @@ const DEFAULT_BUDGETS = {
 const MUTABLE_TRACKING_FIELDS = new Set(["model_used"]);
 const STATE_METADATA_FIELDS = ["name", "basePath", "phase"];
 const STATE_PHASES = new Set(["idea", "research", "requirements", "design", "tasks", "execution", "completed"]);
+const LEGACY_INDEX_FIELDS = ["taskIndex", "totalTasks", "taskIteration", "globalIteration", "parallelGroup", "taskResults"];
 
 class KernelFailure extends Error {
   constructor(code, detail, extra = {}) {
@@ -177,7 +178,8 @@ function parseFrontmatter(text) {
   }
   const body = text.slice(3, end).split(/\r?\n/);
   const result = {};
-  for (const line of body) {
+  for (const rawLine of body) {
+    const line = rawLine.trimEnd();
     const match = line.match(/^([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$/);
     if (!match) continue;
     result[match[1]] = match[2].trim().replace(/^["']|["']$/g, "");
@@ -301,6 +303,20 @@ function readState(specDir) {
   }
 }
 
+function assertNoIndexOnlyState(state) {
+  const indexFields = LEGACY_INDEX_FIELDS.filter((field) => Object.hasOwn(state, field));
+  if (!indexFields.length) return;
+  const hasStableIdentity = typeof state.currentTaskId === "string"
+    || Array.isArray(state.taskOrder)
+    || (state.taskStates && typeof state.taskStates === "object" && !Array.isArray(state.taskStates));
+  if (!hasStableIdentity) {
+    throw artifactError("legacy index-only state is not supported; original bytes were preserved", {
+      artifact: STATE_FILE,
+      fields: indexFields,
+    });
+  }
+}
+
 function stateOwnKeys(state) {
   return Object.keys(state).filter((key) => key !== "__fresh");
 }
@@ -330,6 +346,7 @@ function defaultStateName(specDir, artifactText = "") {
 }
 
 function initializeFreshStateMetadata(state, specDir, phase, artifactText = "") {
+  assertNoIndexOnlyState(state);
   if (hasCompleteStateMetadata(state)) {
     assertStateMetadata(state, specDir);
     return;
@@ -578,6 +595,29 @@ function validateRelativePath(repoRoot, relPath, taskId, fieldName) {
   const root = path.resolve(repoRoot);
   if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) {
     throw artifactError(`${fieldName} path escapes repo: ${relPath}`, { taskId, path: relPath });
+  }
+}
+
+function assertNoSymlinkPathComponents(repoRoot, relPath, taskId, fieldName) {
+  const parts = relPath.split(/[\\/]+/).filter(Boolean);
+  let current = path.resolve(repoRoot);
+  for (const part of parts) {
+    current = path.join(current, part);
+    if (!existsSync(current)) return;
+    if (lstatSync(current).isSymbolicLink()) {
+      throw artifactError(`${fieldName} path traverses symlink: ${relPath}`, { taskId, path: relPath });
+    }
+  }
+}
+
+function assertContainedRealPath(repoRoot, candidate, taskId, fieldName) {
+  const root = realpathSync(repoRoot);
+  const resolved = realpathSync(candidate);
+  if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) {
+    throw artifactError(`${fieldName} path escapes repo: ${path.relative(repoRoot, candidate) || "."}`, {
+      taskId,
+      path: resolved,
+    });
   }
 }
 
@@ -1065,7 +1105,13 @@ function validateTask(task, repoRoot, knownTraces) {
   if (!existsSync(cwd)) {
     throw artifactError(`Cwd does not exist: ${task.fields.Cwd.trim()}`, { taskId: task.taskId });
   }
+  assertNoSymlinkPathComponents(repoRoot, task.fields.Cwd.trim(), task.taskId, "Cwd");
+  assertContainedRealPath(repoRoot, cwd, task.taskId, "Cwd");
   let files = parseList(task.fields.Files);
+  const duplicateFiles = files.filter((file, index) => files.indexOf(file) !== index);
+  if (duplicateFiles.length) {
+    throw artifactError("Files contains duplicate paths", { taskId: task.taskId, paths: [...new Set(duplicateFiles)] });
+  }
   if (task.taskType === "verify") {
     if (task.fields.Files.trim() !== "none" || task.fields.Commit.trim() !== "none") {
       throw artifactError("checkpoint tasks must declare Files=none and Commit=none", { taskId: task.taskId });
@@ -1074,7 +1120,10 @@ function validateTask(task, repoRoot, knownTraces) {
   } else if (task.fields.Files.trim() === "none") {
     throw artifactError("Files=none is only valid for checkpoints", { taskId: task.taskId });
   } else {
-    for (const file of files) validateRelativePath(repoRoot, file, task.taskId, "Files");
+    for (const file of files) {
+      validateRelativePath(repoRoot, file, task.taskId, "Files");
+      assertNoSymlinkPathComponents(repoRoot, file, task.taskId, "Files");
+    }
   }
   const traces = parseList(task.fields.Traces);
   if (traces.length === 0) {
@@ -1107,9 +1156,7 @@ function requireTasksApproval(state, actualHash, tasks) {
   if (approval.sha256 === actualHash) return approval;
   const currentMetadata = buildTaskApprovalMetadata(tasks);
   const semanticMatch = approval.taskDigests && sameStringMap(approval.taskDigests, currentMetadata.taskDigests);
-  const orderChanged = approval.taskOrder && !sameTaskOrder(approval.taskOrder, currentMetadata.taskOrder);
-  const checksChanged = approval.taskChecks && !sameTaskChecks(approval.taskChecks, currentMetadata.taskChecks);
-  if (semanticMatch && (orderChanged || checksChanged)) {
+  if (semanticMatch) {
     return approval;
   }
   throw artifactError("tasks hash is stale", { artifact: "tasks", expected: approval.sha256, actual: actualHash });
@@ -1133,6 +1180,7 @@ function buildPlanSummary(tasks, requiredTraceIds, state = {}) {
 
 function ensureLedger(state, tasks, tasksHash) {
   assertStateMetadata(state, state.basePath);
+  assertNoIndexOnlyState(state);
   validateBudgetLedger(state);
   state.schemaVersion = Math.max(Number(state.schemaVersion || 1), 2);
   state.runId ||= `run-${createHash("sha256").update(`${tasksHash}:${state.basePath || ""}`).digest("hex").slice(0, 12)}`;
@@ -1159,9 +1207,7 @@ function ensureLedger(state, tasks, tasksHash) {
     state.taskStates[task.taskId].dispatchFailures ??= 0;
     state.taskStates[task.taskId].executionAttempts ??= 0;
   }
-  if (state.taskIndex !== undefined && !state.legacyMigratedAt) {
-    throw artifactError("legacy taskIndex state migration is not supported yet", { artifact: STATE_FILE });
-  }
+  assertNoIndexOnlyState(state);
   validateBudgetLedger(state);
   return state;
 }

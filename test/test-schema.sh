@@ -83,13 +83,19 @@ if jq -e '.properties.phase.enum' "$SCHEMA" >/dev/null 2>&1; then
   # Verify all expected phases
   PHASES=$(jq -r '.properties.phase.enum[]' "$SCHEMA" | sort | tr '\n' ' ')
   echo "    phases: $PHASES"
-  if jq -e '.properties.phase.enum | index("completed")' "$SCHEMA" >/dev/null 2>&1; then
+if jq -e '.properties.phase.enum | index("completed")' "$SCHEMA" >/dev/null 2>&1; then
     ok "phase enum includes completed"
   else
     fail "phase enum missing completed"
   fi
 else
   fail "phase missing enum"
+fi
+
+if jq -e '.properties.researchDepth.type == "string" and (.properties.researchDepth.enum | index("standard")) and (.properties.researchDepth.enum | index("deep")) and .properties.researchDepth.default == "standard"' "$SCHEMA" >/dev/null 2>&1; then
+  ok "researchDepth documents standard/deep scaffold defaults"
+else
+  fail "researchDepth missing or does not match scaffold defaults"
 fi
 
 # 4. Has "mode" property
@@ -190,6 +196,155 @@ if jq -e '.properties.coordinator.properties.mode.enum | index("clarification")'
   ok "coordinator.mode enum includes clarification"
 else
   fail "coordinator.mode missing clarification"
+fi
+
+echo "-- Execution ledger persisted shapes..."
+for stage in recovery_required blocked indeterminate intent_recorded target_verified_clean patch_applied target_verified target_committed completed; do
+  if jq -e --arg stage "$stage" '.properties.currentStage.enum | index($stage)' "$SCHEMA" >/dev/null 2>&1; then
+    ok "currentStage includes '$stage'"
+  else
+    fail "currentStage missing '$stage'"
+  fi
+done
+
+if jq -e '."$defs".ownershipManifest.required == ["candidate", "status", "index"]' "$SCHEMA" >/dev/null 2>&1; then
+  ok "ownership manifest requires candidate/status/index"
+else
+  fail "ownership manifest contract is incomplete"
+fi
+
+if jq -e '.properties.attempts.additionalProperties.properties.ownership.properties.beforeDispatch."$ref" == "#/$defs/ownershipManifest" and .properties.attempts.additionalProperties.properties.ownership.properties.afterReport."$ref" == "#/$defs/ownershipManifest"' "$SCHEMA" >/dev/null 2>&1; then
+  ok "attempt ownership records beforeDispatch and afterReport manifests"
+else
+  fail "attempt ownership manifest properties are missing"
+fi
+
+if jq -e '.properties.attempts.additionalProperties.required | index("actor") and index("adapterStart")' "$SCHEMA" >/dev/null 2>&1; then
+  ok "attempt schema requires real dispatch actor and adapterStart fields"
+else
+  fail "attempt schema does not require actor and adapterStart"
+fi
+
+if jq -e '.properties.attempts.additionalProperties.properties.report."$ref" == "#/$defs/reportRecord" and .properties.attempts.additionalProperties.properties.recovery."$ref" == "#/$defs/recoveryRecord"' "$SCHEMA" >/dev/null 2>&1; then
+  ok "attempt schema documents report and recovery records"
+else
+  fail "attempt schema missing report or recovery records"
+fi
+
+if jq -e '."$defs".recoveryRecord.properties.previousState.enum | index("indeterminate") and index("reported_blocked")' "$SCHEMA" >/dev/null 2>&1; then
+  ok "recovery record allows recovered indeterminate and env-blocked stages"
+else
+  fail "recovery record previousState enum is incomplete"
+fi
+
+if jq -e '.properties.paused."$ref" == "#/$defs/pausedState" and .properties.trackingProjection."$ref" == "#/$defs/trackingProjection"' "$SCHEMA" >/dev/null 2>&1; then
+  ok "schema documents pause and tracking projection records"
+else
+  fail "schema missing paused or trackingProjection"
+fi
+
+if jq -e '.properties.approvals.additionalProperties.properties.taskDigests.additionalProperties.type == "string" and .properties.approvals.additionalProperties.properties.taskChecks.additionalProperties.type == "boolean"' "$SCHEMA" >/dev/null 2>&1; then
+  ok "tasks approval metadata records per-task digests and checkbox state"
+else
+  fail "tasks approval metadata missing digest/check maps"
+fi
+
+if node - "$SCHEMA" <<'EOF_NODE'
+const fs = require("fs");
+const schema = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+const props = schema.properties;
+const defs = schema.$defs;
+const representative = {
+  dispatch: {
+    currentTaskId: "1.1",
+    currentStage: "dispatching",
+    activeAttemptId: "attempt-1",
+    taskOrder: ["1.1", "V1"],
+    taskStates: {
+      "1.1": {
+        taskId: "1.1",
+        status: "in_progress",
+        required: true,
+        attempts: ["attempt-1"],
+        latestAttemptId: "attempt-1",
+        dispatchFailures: 0,
+        executionAttempts: 1,
+      },
+    },
+    attempts: {
+      "attempt-1": {
+        attemptId: "attempt-1",
+        taskId: "1.1",
+        sequence: 1,
+        dispatchBudgetUsed: 0,
+        executionBudgetUsed: 1,
+        globalBudgetUsed: 1,
+        state: "dispatching",
+        actor: "implement",
+        adapterStart: "started",
+        worktree: { path: "/tmp/wt", branch: "attempt-1", targetHeadAtCreate: "abc", files: ["src/a.txt"] },
+      },
+    },
+  },
+  report: {
+    currentStage: "reported_complete",
+    attempts: {
+      "attempt-1": {
+        report: {
+          attemptId: "attempt-1",
+          taskId: "1.1",
+          outcome: "task_complete",
+          startedWork: true,
+          summary: "fixture report",
+        },
+      },
+    },
+  },
+  recovery: {
+    currentStage: "ready",
+    attempts: {
+      "attempt-1": {
+        recovery: {
+          evidence: "executor process tree confirmed ended",
+          recoveredAt: "2026-09-06T00:00:00.000Z",
+          previousState: "indeterminate",
+          failureClass: "unknown_start",
+        },
+      },
+    },
+  },
+  pause: {
+    paused: {
+      reason: "operator cancelled without deleting work",
+      pausedAt: "2026-09-06T00:00:00.000Z",
+      activeAttemptId: "attempt-1",
+      currentTaskId: "1.1",
+      currentStage: "dispatching",
+    },
+  },
+};
+if (!props.currentTaskId || !props.taskOrder || !props.taskStates || !props.attempts || !props.paused) process.exit(1);
+if (!props.currentStage.enum.includes(representative.dispatch.currentStage)) process.exit(1);
+if (!props.currentStage.enum.includes(representative.report.currentStage)) process.exit(1);
+const taskProps = props.taskStates.additionalProperties.properties;
+if (!taskProps.status.enum.includes(representative.dispatch.taskStates["1.1"].status)) process.exit(1);
+if (taskProps.latestAttemptId.type !== "string") process.exit(1);
+const attemptProps = props.attempts.additionalProperties.properties;
+if (!attemptProps.state.enum.includes(representative.dispatch.attempts["attempt-1"].state)) process.exit(1);
+if (attemptProps.report.$ref !== "#/$defs/reportRecord") process.exit(1);
+if (attemptProps.recovery.$ref !== "#/$defs/recoveryRecord") process.exit(1);
+if (props.paused.$ref !== "#/$defs/pausedState") process.exit(1);
+if (!defs.reportRecord.properties.outcome.enum.includes(representative.report.attempts["attempt-1"].report.outcome)) process.exit(1);
+if (!defs.recoveryRecord.properties.previousState.enum.includes(representative.recovery.attempts["attempt-1"].recovery.previousState)) process.exit(1);
+if (!defs.recoveryRecord.properties.failureClass.enum.includes(representative.recovery.attempts["attempt-1"].recovery.failureClass)) process.exit(1);
+for (const key of defs.pausedState.required) {
+  if (!Object.prototype.hasOwnProperty.call(representative.pause.paused, key)) process.exit(1);
+}
+EOF_NODE
+then
+  ok "schema covers representative emitted dispatch/report/recovery/pause state fields"
+else
+  fail "schema does not cover representative emitted execution state fields"
 fi
 
 if jq -e '.required | index("coordinator") | not' "$SCHEMA" >/dev/null 2>&1; then

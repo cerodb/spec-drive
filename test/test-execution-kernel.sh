@@ -162,6 +162,61 @@ EOF_TASKS
   init_fixture_repo "$dir/repo"
 }
 
+write_contract_fixture() {
+  local dir="$1"
+  write_fixture "$dir"
+  node -e '
+    const fs = require("fs");
+    const file = process.argv[1];
+    const reqSha = process.argv[2];
+    const designSha = process.argv[3];
+    const text = `---
+spec: "fixture"
+phase: tasks
+status: "complete"
+requirements_sha: "${reqSha}"
+design_sha: "${designSha}"
+---
+
+# Tasks: fixture
+
+<!--
+- [ ] 9.9 Commented task must not parse
+  - **Unknown**: ignored
+-->
+
+## Phase 1
+
+- [ ] 1.1 Create gate
+  - **Do**: Parse artifacts and stop invalid plans before dispatch.
+    \`\`\`text
+    - [ ] 8.8 Fenced task must not parse
+      - **Unknown**: ignored inside fence
+    \`\`\`
+  - Files: src/gate.txt
+  - Traces: AC-1.1, FR-1, NFR-1
+  - **model**: advanced
+  - **model_used**: gpt-fixture
+  - Cwd: .
+  - **Done when**: Valid plan passes.
+  - Verify: test -f src/gate.txt
+  - Timeout: 120
+  - Commit: feat: gate
+
+- [ ] V1 [VERIFY] Check gate
+  - Do: Check the local gate.
+  - Files: none
+  - Traces: AC-1.2
+  - Cwd: .
+  - Done when: Invalid plans fail.
+  - Verify: test ! -f src/dispatch.txt
+  - Timeout: 120
+  - Commit: none
+`;
+    fs.writeFileSync(file, text.replace(/\n/g, "\r\n"));
+  ' "$dir/spec/tasks.md" "$(sha_file "$dir/spec/requirements.md")" "$(sha_file "$dir/spec/design.md")"
+}
+
 write_flow_fixture() {
   local dir="$1"
   rm -rf "$dir"
@@ -550,6 +605,137 @@ expect_invalid_mutation() {
   assert_json_error_contains "$dir/preflight.out" "$needle"
   [[ ! -e "$dir/repo/src/dispatch.txt" ]] || fail "$name wrote dispatch sentinel"
   [[ ! -e "$dir/repo/src/generated-code.txt" ]] || fail "$name wrote product code"
+}
+
+expect_contract_preflight_error() {
+  local name="$1"
+  local mutator="$2"
+  local needle="$3"
+  local dir="$TMP_ROOT/$name"
+  write_fixture "$dir"
+  node -e "$mutator" "$dir/spec/tasks.md" "$dir/repo"
+  approve_all "$dir"
+  if run_preflight "$dir"; then
+    fail "$name passed unexpectedly"
+  fi
+  assert_json_error_contains "$dir/preflight.out" "$needle"
+  [[ ! -e "$dir/repo/src/dispatch.txt" ]] || fail "$name wrote dispatch sentinel"
+}
+
+contracts_poc() {
+  rm -rf "$TMP_ROOT"
+  mkdir -p "$TMP_ROOT"
+
+  local parser="$TMP_ROOT/contracts-parser"
+  write_contract_fixture "$parser"
+  approve_all "$parser"
+  run_preflight "$parser" || fail "contract parser preflight failed: $(cat "$parser/preflight.err")"
+  assert_json_ok "$parser/preflight.out"
+  node -e '
+    const fs = require("fs");
+    const p = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    if (p.plan.totalTasks !== 2 || p.plan.taskOrder.join(",") !== "1.1,V1") process.exit(1);
+  ' "$parser/preflight.out" || fail "contract parser task identity mismatch"
+
+  perl -0pi -e 's/\*\*model_used\*\*: gpt-fixture/**model_used**: gpt-fixture-v2/' "$parser/spec/tasks.md"
+  run_preflight "$parser" || fail "model_used-only change required fresh approval: $(cat "$parser/preflight.err")"
+  assert_json_ok "$parser/preflight.out"
+  perl -0pi -e 's/- \[ \] 1\.1 Create gate/- [x] 1.1 Create gate/' "$parser/spec/tasks.md"
+  perl -0pi -e 's/(- \[x\] 1\.1 Create gate.*?\r?\n\r?\n)(- \[ \] V1 \[VERIFY\] Check gate.*?Commit: none\r?\n)/$2\r\n$1/s' "$parser/spec/tasks.md"
+  run_next "$parser" "reordered" || fail "digest-stable reorder failed dispatch: $(cat "$parser/next-reordered.err")"
+  assert_json_ok "$parser/next-reordered.out"
+  [[ "$(json_get "$parser/next-reordered.out" "dispatch.taskId")" == "1.1" ]] || fail "reorder changed executable identity"
+
+  local semantic="$TMP_ROOT/contracts-semantic-stale"
+  write_contract_fixture "$semantic"
+  approve_all "$semantic"
+  perl -0pi -e 's/Valid plan passes\./Changed executable condition./' "$semantic/spec/tasks.md"
+  if run_preflight "$semantic"; then
+    fail "semantic task change passed with stale approval"
+  fi
+  assert_json_error_contains "$semantic/preflight.out" "tasks hash is stale"
+
+  expect_contract_preflight_error "contracts-file-escape" '
+    const fs = require("fs");
+    const file = process.argv[1];
+    fs.writeFileSync(file, fs.readFileSync(file, "utf8").replace("**Files**: src/gate.txt", "**Files**: ../escape.txt"));
+  ' "Files path escapes repo"
+
+  expect_contract_preflight_error "contracts-duplicate-files" '
+    const fs = require("fs");
+    const file = process.argv[1];
+    fs.writeFileSync(file, fs.readFileSync(file, "utf8").replace("**Files**: src/gate.txt", "**Files**: src/gate.txt, src/gate.txt"));
+  ' "duplicate paths"
+
+  expect_contract_preflight_error "contracts-file-symlink" '
+    const fs = require("fs");
+    const path = require("path");
+    const file = process.argv[1];
+    const repo = process.argv[2];
+    fs.symlinkSync(path.join(repo, "src"), path.join(repo, "linked-src"));
+    fs.writeFileSync(file, fs.readFileSync(file, "utf8").replace("**Files**: src/gate.txt", "**Files**: linked-src/gate.txt"));
+  ' "Files path traverses symlink"
+
+  expect_contract_preflight_error "contracts-cwd-symlink" '
+    const fs = require("fs");
+    const path = require("path");
+    const file = process.argv[1];
+    const repo = process.argv[2];
+    fs.symlinkSync(path.join(repo, "src"), path.join(repo, "linked-cwd"));
+    fs.writeFileSync(file, fs.readFileSync(file, "utf8").replace("**Cwd**: .", "**Cwd**: linked-cwd"));
+  ' "Cwd path traverses symlink"
+
+  local legacy="$TMP_ROOT/contracts-legacy-index-only"
+  write_fixture "$legacy"
+  approve_all "$legacy"
+  local before
+  before="$(sha_file "$legacy/spec/.spec-drive-state.json")"
+  node -e '
+    const fs = require("fs");
+    const file = process.argv[1];
+    const state = JSON.parse(fs.readFileSync(file, "utf8"));
+    delete state.currentTaskId;
+    delete state.taskOrder;
+    delete state.taskStates;
+    state.taskIndex = 0;
+    state.totalTasks = 2;
+    fs.writeFileSync(file, JSON.stringify(state, null, 2) + "\n");
+  ' "$legacy/spec/.spec-drive-state.json"
+  before="$(sha_file "$legacy/spec/.spec-drive-state.json")"
+  if run_next "$legacy" "legacy"; then
+    fail "index-only state was silently accepted"
+  fi
+  assert_json_error_contains "$legacy/next-legacy.out" "legacy index-only state"
+  [[ "$(sha_file "$legacy/spec/.spec-drive-state.json")" == "$before" ]] || fail "index-only rejection mutated state bytes"
+
+  local modern="$TMP_ROOT/contracts-modern-with-legacy-counter"
+  write_fixture "$modern"
+  approve_all "$modern"
+  node -e '
+    const fs = require("fs");
+    const file = process.argv[1];
+    const state = JSON.parse(fs.readFileSync(file, "utf8"));
+    delete state.legacyMigratedAt;
+    state.currentTaskId = "1.1";
+    state.taskOrder = ["1.1", "V1"];
+    state.taskStates = {
+      "1.1": { taskId: "1.1", status: "pending", required: true, attempts: [], dispatchFailures: 0, executionAttempts: 0 },
+      "V1": { taskId: "V1", status: "pending", required: true, attempts: [], dispatchFailures: 0, executionAttempts: 0 }
+    };
+    state.currentStage = "ready";
+    state.taskIndex = 0;
+    fs.writeFileSync(file, JSON.stringify(state, null, 2) + "\n");
+  ' "$modern/spec/.spec-drive-state.json"
+  run_preflight "$modern" || fail "modern ID-based state with taskIndex failed preflight: $(cat "$modern/preflight.err")"
+  assert_json_ok "$modern/preflight.out"
+  run_next "$modern" "legacy-counter" || fail "modern ID-based state with taskIndex failed next: $(cat "$modern/next-legacy-counter.err")"
+  assert_json_ok "$modern/next-legacy-counter.out"
+  node -e '
+    const fs = require("fs");
+    const state = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    if (state.currentTaskId !== "1.1" || !Object.prototype.hasOwnProperty.call(state, "taskIndex")) process.exit(1);
+    if (Object.prototype.hasOwnProperty.call(state, "legacyMigratedAt")) process.exit(1);
+  ' "$modern/spec/.spec-drive-state.json" || fail "modern state did not retain compatible legacy counter"
 }
 
 gate_poc() {
@@ -1619,6 +1805,7 @@ for mode in "$@"; do
     flow-poc) flow_poc ;;
     crash) crash_poc ;;
     ownership) ownership_poc ;;
+    contracts) contracts_poc ;;
     all) all ;;
     *) fail "unknown mode: $mode" ;;
   esac

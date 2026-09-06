@@ -32,6 +32,19 @@
         ]
       }
     },
+    "ownershipManifest": {
+      "type": "object",
+      "properties": {
+        "candidate": { "$ref": "#/$defs/contentManifest" },
+        "status": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "index": { "type": "string" }
+      },
+      "required": ["candidate", "status", "index"],
+      "additionalProperties": false
+    },
     "verifyRecord": {
       "type": "object",
       "properties": {
@@ -65,6 +78,42 @@
       "required": ["taskId", "attemptId", "command", "cwd", "timeoutSec", "exitCode", "verifiedTree", "commitOid", "parent", "tree", "trailer", "acceptedAt"],
       "additionalProperties": false
     },
+    "reportRecord": {
+      "type": "object",
+      "properties": {
+        "attemptId": { "type": "string" },
+        "taskId": { "type": "string" },
+        "outcome": {
+          "type": "string",
+          "enum": ["task_complete", "task_blocked", "task_indeterminate"]
+        },
+        "startedWork": { "type": "boolean" },
+        "summary": { "type": "string" },
+        "failureClass": {
+          "type": "string",
+          "enum": ["dispatch_error", "env_error", "logic_error", "verify_error", "design_error", "external_change_error"]
+        }
+      },
+      "required": ["attemptId", "taskId", "outcome", "startedWork", "summary"],
+      "additionalProperties": true
+    },
+    "recoveryRecord": {
+      "type": "object",
+      "properties": {
+        "evidence": { "type": "string" },
+        "recoveredAt": { "type": "string", "format": "date-time" },
+        "previousState": {
+          "type": "string",
+          "enum": ["indeterminate", "reported_blocked"]
+        },
+        "failureClass": {
+          "type": ["string", "null"],
+          "enum": ["dispatch_error", "env_error", "logic_error", "verify_error", "design_error", "external_change_error", "unknown_start", null]
+        }
+      },
+      "required": ["evidence", "recoveredAt", "previousState", "failureClass"],
+      "additionalProperties": false
+    },
     "promotionIntent": {
       "type": "object",
       "properties": {
@@ -94,6 +143,30 @@
         "tree": { "type": "string" }
       },
       "required": ["attemptId", "taskId", "verifyCommand", "verifyCwd", "verifyTimeoutSec", "targetHeadExpected", "targetFilesExpectedClean", "targetCommitMessage", "stage"],
+      "additionalProperties": false
+    },
+    "pausedState": {
+      "type": "object",
+      "properties": {
+        "reason": { "type": "string" },
+        "pausedAt": { "type": "string", "format": "date-time" },
+        "activeAttemptId": { "type": ["string", "null"] },
+        "currentTaskId": { "type": ["string", "null"] },
+        "currentStage": { "type": "string" }
+      },
+      "required": ["reason", "pausedAt", "activeAttemptId", "currentTaskId", "currentStage"],
+      "additionalProperties": false
+    },
+    "trackingProjection": {
+      "type": "object",
+      "properties": {
+        "tasksFile": { "type": "string" },
+        "progressFile": { "type": "string" },
+        "acceptedCount": { "type": "integer", "minimum": 0 },
+        "totalTasks": { "type": "integer", "minimum": 0 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["tasksFile", "progressFile", "acceptedCount", "totalTasks", "updatedAt"],
       "additionalProperties": false
     },
     "activeRegistry": {
@@ -160,7 +233,7 @@
     },
     "currentStage": {
       "type": "string",
-      "enum": ["preflight", "ready", "dispatching", "running", "reported_complete", "indeterminate", "completed"],
+      "enum": ["preflight", "ready", "dispatching", "running", "reported_complete", "recovery_required", "blocked", "indeterminate", "intent_recorded", "target_verified_clean", "patch_applied", "target_verified", "target_committed", "completed"],
       "description": "Current ledger stage"
     },
     "activeAttemptId": {
@@ -265,10 +338,19 @@
             "required": ["path", "branch", "targetHeadAtCreate", "files"],
             "additionalProperties": false
           },
-          "report": { "type": "object" },
+          "ownership": {
+            "type": "object",
+            "properties": {
+              "beforeDispatch": { "$ref": "#/$defs/ownershipManifest" },
+              "afterReport": { "$ref": "#/$defs/ownershipManifest" }
+            },
+            "additionalProperties": false
+          },
+          "report": { "$ref": "#/$defs/reportRecord" },
+          "recovery": { "$ref": "#/$defs/recoveryRecord" },
           "promotion": { "$ref": "#/$defs/promotionIntent" }
         },
-        "required": ["attemptId", "taskId", "sequence", "dispatchBudgetUsed", "executionBudgetUsed", "globalBudgetUsed", "state", "worktree"],
+        "required": ["attemptId", "taskId", "sequence", "dispatchBudgetUsed", "executionBudgetUsed", "globalBudgetUsed", "state", "actor", "adapterStart", "worktree"],
         "additionalProperties": false
       }
     },
@@ -282,6 +364,12 @@
       "enum": ["normal", "auto"],
       "default": "normal",
       "description": "Execution mode. normal = approval gates between phases. auto = definition phases still stop for review, then execution may proceed autonomously after task planning."
+    },
+    "researchDepth": {
+      "type": "string",
+      "enum": ["standard", "deep"],
+      "default": "standard",
+      "description": "Research pass depth selected at project creation"
     },
     "taskIndex": {
       "type": "integer",
@@ -375,6 +463,8 @@
       "required": ["active", "mode", "reason", "degraded"],
       "additionalProperties": false
     },
+    "paused": { "$ref": "#/$defs/pausedState" },
+    "trackingProjection": { "$ref": "#/$defs/trackingProjection" },
     "taskResults": {
       "type": "object",
       "description": "Results keyed by task index. Tracks status and errors for completed/failed tasks.",
