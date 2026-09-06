@@ -13,7 +13,7 @@ idea -> research -> requirements -> design -> tasks -> execution
 3. **requirements**: Product-manager reads idea.md + research.md, produces requirements.md with US/AC/FR/NFR.
 4. **design**: Architect reads idea.md + research.md + requirements.md, produces design.md with components and decisions.
 5. **tasks**: Task-planner reads requirements.md + design.md, produces tasks.md with phased task breakdown.
-6. **execution**: Coordinator (implement.md) delegates tasks one-by-one to executor or qa-engineer. Stop-watcher continues loop across sessions.
+6. **execution**: The execution kernel selects tasks by stable `taskId`, owns attempts and acceptance, and returns dispatch envelopes. `implement.md` and stop-watcher are bridges; executor and qa-engineer are untrusted task adapters.
 
 ## Document Chain
 
@@ -25,8 +25,8 @@ Each agent reads predecessor files directly via Read tool. No context summaries,
 | product-manager | idea.md, research.md | requirements.md |
 | architect | idea.md, research.md, requirements.md | design.md |
 | task-planner | requirements.md, design.md | tasks.md |
-| executor | Current task block, .progress.md | Code changes, commits |
-| qa-engineer | [VERIFY] task block, requirements.md | VERIFICATION_PASS/FAIL |
+| executor | Kernel dispatch envelope, current task block, relevant context | Declared-file changes plus an identity-bound report |
+| qa-engineer | Kernel dispatch envelope, [VERIFY] task block, requirements.md | Read-only inspection plus an identity-bound report |
 
 ## Approval Gates
 
@@ -46,14 +46,22 @@ See [phase-checklists.md](references/phase-checklists.md) for checklist definiti
 
 ## State Tracking
 
-State is tracked in `.spec-drive-state.json` within the project's spec/ directory. Key fields:
+State is tracked in `.spec-drive-state.json` within the project's spec/ directory. During execution, only `hooks/scripts/execution-kernel.mjs` may mutate the execution ledger. Key fields are:
 
 - `phase`: Current phase (enum of the 6 phases)
 - `awaitingApproval`: Whether the user needs to review before proceeding
 - `mode`: "normal" (default) or "auto" (allows autonomous execution after task planning)
-- `taskIndex`: Current task during execution phase
-- `taskIteration`: Retry count for current task (resets per task)
-- `globalIteration`: Total loop iterations across all tasks
+- `currentTaskId`: Stable task identity selected by the kernel, or `null` after closure
+- `currentStage`: Durable execution/promotion stage
+- `activeAttemptId`: Attempt that is active or awaiting explicit recovery
+- `taskOrder`: Approved stable task identities; never an ordinal selector
+- `taskStates`: Per-task status and attempt counters
+- `attempts`: Durable dispatch, ownership, report, recovery, Verify, and promotion evidence
+- `budgets`: Dispatch, implementation-attempt, and global operation limits
+
+The canonical bridge cycle is `resume -> next -> dispatch -> report -> accept`. Adapter start evidence (`started`, `not_started`, or `unknown`) is supplied separately from the executor report. A sentinel never accepts a task. Proven no-start refunds the implementation attempt; unknown start requires explicit kernel recovery before redispatch.
+
+`/spec-drive:cancel` calls kernel `pause` and preserves state, worktrees, task states, attempts, and budgets. `/spec-drive:status`, context-loader, and stop-watcher consume kernel `status` or `resume` instead of deriving execution from task indexes or transcript text.
 
 ## Project Artifact Topology
 

@@ -1,36 +1,39 @@
 # Delegation Principle
 
-The coordinator (implement.md command) NEVER implements tasks directly. It always delegates via the Task tool.
+The `/spec-drive:implement` coordinator delegates task work and acts only as an adapter to the execution kernel.
 
-## Rule
+## Ownership
 
-All task work is performed by specialized agents. The coordinator's sole job is orchestration: reading state, determining the next action, delegating, and updating state based on results.
+`hooks/scripts/execution-kernel.mjs` is the sole authority for:
 
-## Coordinator Responsibilities
+1. validating the approved plan
+2. selecting the next stable `taskId`
+3. reserving attempts and charging budgets
+4. classifying dispatch/start evidence through `report`
+5. running authoritative final Verify
+6. promoting isolated work, committing, and projecting tracking
+7. pause, resume, recovery, and completed closure
 
-1. Read `.spec-drive-state.json` to determine current task
-2. Parse the task block from tasks.md at the current taskIndex
-3. Detect task type: `[P]` for parallel, `[VERIFY]` for QA delegation
-4. Delegate to the appropriate agent via Task tool:
-   - Regular tasks -> executor agent
-   - `[VERIFY]` tasks -> qa-engineer agent
-5. Wait for agent signal (TASK_COMPLETE, VERIFICATION_PASS, VERIFICATION_FAIL)
-6. Update state: advance taskIndex on success, increment taskIteration on failure
-7. When all tasks complete: output ALL_TASKS_COMPLETE
+The coordinator discovers the project, invokes kernel operations, dispatches the exact returned envelope, records adapter start evidence independently, and forwards one identity-bound structured executor report. It never creates a second ledger.
 
-## Coordinator NEVER Does
+## Implementer boundary
 
-- Write application code
-- Run git commands (add, commit, push)
-- Perform codebase analysis or exploration
-- Read/modify project source files
-- Execute verification commands
-- Make implementation decisions
+Regular tasks go to the executor; checkpoint tasks go to the QA engineer. Both operate with the kernel-provided `taskId`, `attemptId`, and worktree. They may inspect and implement within their declared scope, but they do not run Git, final Verify, state updates, tracking, or closure.
 
-These are all the executor's or qa-engineer's responsibilities.
+Agent sentinels are compatibility text only. `TASK_COMPLETE` and `VERIFICATION_PASS` cannot prove process start, correctness, or completion. Acceptance requires all three independent inputs:
 
-## Why
+- positive adapter evidence that dispatch started
+- a matching `EXECUTOR_REPORT`
+- successful kernel `accept`, including authoritative Verify
 
-Fresh context isolation. The executor operates with minimal context (task block + .progress.md only). If the coordinator also implemented tasks, it would accumulate the full spec context in its window, violating the fresh-context-per-task design and risking context window exhaustion on large projects.
+Proven no-start is reported with `adapterEvidence=not_started` and does not consume an implementation attempt. Unknown start is reported with `adapterEvidence=unknown`, remains indeterminate, and requires explicit kernel recovery before redispatch.
 
-Separation also enables retry semantics: a failed task spawns a new executor with clean state and failure context from .progress.md, rather than retrying within a polluted context window.
+## Coordinator must never
+
+- select or advance tasks by `taskIndex`, checkbox position, or array ordinal
+- write attempts, task states, budgets, stage, progress, or checkboxes directly
+- run Git, final Verify, promotion, commit, pause/resume, recovery, or closure outside the kernel
+- convert an executor sentinel into acceptance
+- reset or discard work, attempts, or budgets on cancel/resume
+
+Fresh context isolation remains useful, but it is subordinate to the kernel's durable task identity and ownership protocol.

@@ -236,16 +236,24 @@ if jq -e \
     name: $name,
     basePath: $basePath,
     phase: "research",
+    schemaVersion: 2,
     mode: "auto",
     researchDepth: "deep",
-    taskIndex: 0,
-    totalTasks: 0,
-    taskIteration: 1,
-    maxTaskIterations: 5,
-    globalIteration: 1,
-    maxGlobalIterations: 100,
     awaitingApproval: false,
-    taskResults: {}
+    approvals: {},
+    taskOrder: [],
+    currentTaskId: null,
+    currentStage: "preflight",
+    activeAttemptId: null,
+    lastFailureClass: null,
+    budgets: {
+      maxDispatchFailures: 3,
+      maxExecutionAttempts: 5,
+      maxGlobalOperations: 100,
+      globalBudgetUsed: 0
+    },
+    taskStates: {},
+    attempts: {}
   }' "$EXPECTED_PATH/spec/.spec-drive-state.json" >/dev/null; then
   ok "state JSON content is deterministic"
 else

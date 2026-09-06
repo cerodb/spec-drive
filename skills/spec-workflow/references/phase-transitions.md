@@ -11,10 +11,12 @@ Valid state transitions for the spec-drive workflow. Each transition is triggere
 | `/spec-drive:requirements` | research | requirements | awaitingApproval=false; after PM completes: awaitingApproval=true |
 | `/spec-drive:design` | requirements | design | awaitingApproval=false; after architect completes: awaitingApproval=true |
 | `/spec-drive:tasks` | design | tasks | awaitingApproval=false; after planner completes: awaitingApproval=true |
-| `/spec-drive:implement` | tasks | execution | awaitingApproval=false, taskIndex=0, taskIteration=1, globalIteration=1 |
-| Task complete | execution | execution | taskIndex++, taskIteration=1, globalIteration++ |
-| Task failure | execution | execution | taskIteration++, globalIteration++ |
-| ALL_TASKS_COMPLETE | execution | (done) | State file deleted |
+| Kernel `next` | tasks/execution | execution | selects `currentTaskId`, reserves `attemptId`, persists stage and budgets |
+| Kernel `report` | execution | execution | records identity-bound outcome and separate adapter start evidence |
+| Kernel `accept` | execution | execution | runs final Verify, promotes, commits, projects tracking, advances by stable taskId |
+| Kernel `pause` | execution | execution | records pause metadata without resetting work, attempts, task states, or budgets |
+| Kernel `resume` | execution | execution | resumes interrupted acceptance or returns the current ID-based ledger |
+| All required task states accepted | execution | completed | currentTaskId=null, currentStage=completed; state remains archived in place |
 
 ## Auto Mode Transitions
 
@@ -26,7 +28,7 @@ When `mode: "auto"`, automatic continuation is intentionally limited:
 | requirements (complete) | Stop and require review before `/spec-drive:design` |
 | design (complete) | Stop and require review before `/spec-drive:tasks` |
 | tasks (complete) | `/spec-drive:implement` may start automatically |
-| execution | Continue task loop as normal |
+| execution | Continue only through kernel resume/dispatch/accept |
 
 Rationale:
 
@@ -86,7 +88,11 @@ When either SHA mismatches the current file hash, tasks are considered stale and
 
 SHA generation: `git hash-object <file>` preferred; `sha256sum <file> | cut -c1-64` as fallback.
 
-## Iteration Limits
+## Execution budgets and recovery
 
-- `maxTaskIterations` (default: 5): Max retries per individual task. Exceeded = stop with error.
-- `maxGlobalIterations` (default: 100): Max total loop iterations. Exceeded = stop with error, suggest manual intervention.
+- `maxDispatchFailures` limits proven failures before process start.
+- `maxExecutionAttempts` limits started or uncertain attempts per stable task identity.
+- `maxGlobalOperations` limits kernel reservations across the run.
+- Proven `not_started` dispatch does not consume an implementation attempt. It still records the dispatch failure and global operation.
+- `unknown` start remains indeterminate. Resume must not choose another pending task or redispatch until kernel `recover` receives explicit termination/stability evidence.
+- Executor sentinels are never transition triggers. Only kernel records and authoritative acceptance advance or close a task.

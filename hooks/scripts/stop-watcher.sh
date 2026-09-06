@@ -11,6 +11,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SCRIPT_DIR/resolve-config.sh"
+KERNEL="$SCRIPT_DIR/execution-kernel.mjs"
 
 # Read hook input from stdin
 INPUT=$(cat)
@@ -23,9 +24,6 @@ CWD=$(echo "$INPUT" | jq -r '.cwd // empty' 2>/dev/null || true)
 if [ -z "$CWD" ]; then
     exit 0
 fi
-
-# Get transcript path for completion check
-TRANSCRIPT_PATH=$(echo "$INPUT" | jq -r '.transcript_path // empty' 2>/dev/null || true)
 
 # Default project root (overridable via workspace or XDG config)
 PROJECT_ROOT="$(spec_drive_resolve_project_root "$CWD")"
@@ -41,15 +39,6 @@ is_safe_spec_path() {
     case "$resolved" in
         "$PROJECT_ROOT_REAL"/*/spec) return 0 ;;
         *) return 1 ;;
-    esac
-}
-
-normalize_positive_int() {
-    local raw="$1"
-    local fallback="$2"
-    case "$raw" in
-        ''|*[!0-9]*) echo "$fallback" ;;
-        *) echo "$raw" ;;
     esac
 }
 
@@ -150,66 +139,91 @@ RECOVERY
     exit 0
 fi
 
-# --- Read State ---
+# --- Read lifecycle metadata ---
 NAME=$(jq -r '.name // "unknown"' "$STATE_FILE")
 PHASE=$(jq -r '.phase // "unknown"' "$STATE_FILE")
 MODE=$(jq -r '.mode // "normal"' "$STATE_FILE")
-TASK_INDEX=$(jq -r '.taskIndex // 0' "$STATE_FILE")
-TOTAL_TASKS=$(jq -r '.totalTasks // 0' "$STATE_FILE")
-TASK_ITERATION=$(jq -r '.taskIteration // 1' "$STATE_FILE")
-MAX_TASK_ITER=$(jq -r '.maxTaskIterations // 5' "$STATE_FILE")
-GLOBAL_ITERATION=$(jq -r '.globalIteration // 1' "$STATE_FILE")
-MAX_GLOBAL_ITER=$(jq -r '.maxGlobalIterations // 100' "$STATE_FILE")
 AWAITING=$(jq -r '.awaitingApproval // false' "$STATE_FILE")
-
-GLOBAL_ITERATION="$(normalize_positive_int "$GLOBAL_ITERATION" 1)"
-MAX_GLOBAL_ITER="$(normalize_positive_int "$MAX_GLOBAL_ITER" 100)"
-
-# --- Check transcript for ALL_TASKS_COMPLETE ---
-if [ -n "$TRANSCRIPT_PATH" ] && [ -f "$TRANSCRIPT_PATH" ]; then
-    if tail -100 "$TRANSCRIPT_PATH" 2>/dev/null | grep -q "^ALL_TASKS_COMPLETE$"; then
-        exit 0
-    fi
-fi
-
-# --- Check global iteration limit ---
-if [ "$GLOBAL_ITERATION" -ge "$MAX_GLOBAL_ITER" ]; then
-    cat <<EOF
-## Iteration Limit Reached
-
-Spec **$NAME** hit the global iteration cap ($GLOBAL_ITERATION/$MAX_GLOBAL_ITER).
-
-This safety limit prevents infinite token burn. To continue:
-1. Review .progress.md for stuck tasks
-2. Increase maxGlobalIterations in .spec-drive-state.json if needed
-3. Run /spec-drive:implement to resume
-EOF
-    exit 0
-fi
 
 # --- Skip if awaiting approval ---
 if [ "$AWAITING" = "true" ]; then
     exit 0
 fi
 
-# --- Execution phase: output continuation prompt ---
-if [ "$PHASE" = "execution" ] && [ "$TASK_INDEX" -lt "$TOTAL_TASKS" ]; then
-    cat <<EOF
-Continue spec: $NAME (Task $((TASK_INDEX + 1))/$TOTAL_TASKS, Iter $GLOBAL_ITERATION)
+# --- Execution phase: ask the kernel to resume and describe its ledger ---
+if [ "$PHASE" = "execution" ]; then
+    # A pause only suppresses auto-resume while its ledger snapshot is current.
+    # Explicit implementation may advance the ledger without deleting the historical marker.
+    if jq -e '
+        .paused != null
+        and .paused.currentTaskId == (.currentTaskId // null)
+        and .paused.currentStage == (.currentStage // "preflight")
+        and .paused.activeAttemptId == (.activeAttemptId // null)
+    ' "$STATE_FILE" >/dev/null 2>&1; then
+        exit 0
+    fi
 
-## State
-Path: $SPEC_PATH | Index: $TASK_INDEX | Iteration: $TASK_ITERATION/$MAX_TASK_ITER
+    if [ ! -f "$KERNEL" ]; then
+        echo "Spec-Drive execution kernel is unavailable at $KERNEL. Refusing legacy fallback."
+        exit 0
+    fi
 
-## Resume
-1. Read $SPEC_PATH/.spec-drive-state.json and $SPEC_PATH/tasks.md
-2. Delegate task $TASK_INDEX to executor (or qa-engineer for [VERIFY])
-3. On TASK_COMPLETE: update state, advance
-4. If taskIndex >= totalTasks: output ALL_TASKS_COMPLETE
+    PROJECT_DIR="$(dirname "$SPEC_PATH")"
+    REPO_ROOT=$(git -C "$PROJECT_DIR" rev-parse --show-toplevel 2>/dev/null || true)
+    if [ -z "$REPO_ROOT" ]; then
+        echo "Spec-Drive cannot resume $NAME: project is not inside a Git worktree."
+        exit 0
+    fi
 
-## Critical
-- Delegate via Task tool — do NOT implement yourself
-- On failure: increment taskIteration, retry up to max
+    set +e
+    RESUME_JSON=$(jq -n --arg specDir "$SPEC_PATH" --arg repoRoot "$REPO_ROOT" \
+        '{op:"resume", specDir:$specDir, repoRoot:$repoRoot}' | node "$KERNEL" 2>/dev/null)
+    RESUME_CODE=$?
+    set -e
+    if [ "$RESUME_CODE" -ne 0 ] || ! printf '%s' "$RESUME_JSON" | jq -e '.ok == true' >/dev/null 2>&1; then
+        echo "Spec-Drive kernel resume requires attention for $NAME. Run /spec-drive:status, then /spec-drive:implement."
+        exit 0
+    fi
+
+    # Resume may have completed one interrupted acceptance. Query status rather
+    # than inferring completion or task identity from transcript/checkmarks.
+    set +e
+    STATUS_JSON=$(jq -n --arg specDir "$SPEC_PATH" '{op:"status", specDir:$specDir}' | node "$KERNEL" 2>/dev/null)
+    STATUS_CODE=$?
+    set -e
+    if [ "$STATUS_CODE" -ne 0 ] || ! printf '%s' "$STATUS_JSON" | jq -e '.ok == true' >/dev/null 2>&1; then
+        echo "Spec-Drive kernel status is unavailable for $NAME. Run /spec-drive:status."
+        exit 0
+    fi
+
+    CURRENT_TASK=$(printf '%s' "$STATUS_JSON" | jq -r '.status.currentTaskId // "none"')
+    CURRENT_STAGE=$(printf '%s' "$STATUS_JSON" | jq -r '.status.currentStage // "preflight"')
+    GLOBAL_USED=$(printf '%s' "$STATUS_JSON" | jq -r '.status.budgets.globalBudgetUsed // 0')
+    GLOBAL_MAX=$(printf '%s' "$STATUS_JSON" | jq -r '.status.budgets.maxGlobalOperations // 100')
+
+    if [ "$CURRENT_STAGE" = "completed" ] && [ "$CURRENT_TASK" = "none" ]; then
+        exit 0
+    fi
+
+    case "$CURRENT_STAGE" in
+        indeterminate|recovery_required|blocked)
+            cat <<EOF
+Spec-Drive execution for $NAME requires recovery.
+
+Kernel task: $CURRENT_TASK | Stage: $CURRENT_STAGE | Global budget: $GLOBAL_USED/$GLOBAL_MAX
+Run /spec-drive:status. Do not redispatch until the kernel permits it.
 EOF
+            ;;
+        *)
+            cat <<EOF
+Continue spec: $NAME
+
+Kernel task: $CURRENT_TASK | Stage: $CURRENT_STAGE | Global budget: $GLOBAL_USED/$GLOBAL_MAX
+
+Run /spec-drive:implement. It must continue with kernel resume/next/report/accept, use the returned taskId, and treat agent sentinels as non-authoritative.
+EOF
+            ;;
+    esac
 fi
 
 # --- Auto mode: continue analysis phases ---

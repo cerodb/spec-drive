@@ -10,6 +10,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SCRIPT_DIR/resolve-config.sh"
+KERNEL="$SCRIPT_DIR/execution-kernel.mjs"
 
 # Read hook input from stdin
 INPUT=$(cat)
@@ -89,20 +90,41 @@ if ! jq empty "$STATE_FILE" 2>/dev/null; then
     exit 0
 fi
 
-# --- Read State ---
+# --- Read lifecycle metadata and kernel-owned execution status ---
 NAME=$(jq -r '.name // "unknown"' "$STATE_FILE")
 PHASE=$(jq -r '.phase // "unknown"' "$STATE_FILE")
 MODE=$(jq -r '.mode // "normal"' "$STATE_FILE")
-TASK_INDEX=$(jq -r '.taskIndex // 0' "$STATE_FILE")
-TOTAL_TASKS=$(jq -r '.totalTasks // 0' "$STATE_FILE")
 AWAITING=$(jq -r '.awaitingApproval // false' "$STATE_FILE")
+
+KERNEL_STATUS=""
+if [ -f "$KERNEL" ]; then
+    set +e
+    KERNEL_STATUS=$(jq -n --arg specDir "$SPEC_PATH" '{op:"status", specDir:$specDir}' | node "$KERNEL" 2>/dev/null)
+    KERNEL_STATUS_CODE=$?
+    set -e
+    if [ "$KERNEL_STATUS_CODE" -ne 0 ] || ! printf '%s' "$KERNEL_STATUS" | jq -e '.ok == true and (.status | type == "object")' >/dev/null 2>&1; then
+        echo "[spec-drive] WARNING: Execution status unavailable from kernel. Run /spec-drive:status." >&2
+        KERNEL_STATUS=""
+    fi
+fi
 
 # --- Output Status ---
 echo "[spec-drive] Active project: $NAME" >&2
 echo "[spec-drive] Phase: $PHASE | Mode: $MODE" >&2
 
 if [ "$PHASE" = "execution" ]; then
-    echo "[spec-drive] Task progress: $((TASK_INDEX + 1))/$TOTAL_TASKS" >&2
+    if [ -z "$KERNEL_STATUS" ]; then
+        echo "[spec-drive] Execution status unavailable; refusing ordinal fallback." >&2
+    else
+        CURRENT_TASK=$(printf '%s' "$KERNEL_STATUS" | jq -r '.status.currentTaskId // "none"')
+        CURRENT_STAGE=$(printf '%s' "$KERNEL_STATUS" | jq -r '.status.currentStage // "preflight"')
+        ACCEPTED_TASKS=$(printf '%s' "$KERNEL_STATUS" | jq '[.status.taskStates[]? | select(.status == "accepted")] | length')
+        TOTAL_TASKS=$(printf '%s' "$KERNEL_STATUS" | jq '.status.taskOrder | length')
+        GLOBAL_USED=$(printf '%s' "$KERNEL_STATUS" | jq -r '.status.budgets.globalBudgetUsed // 0')
+        GLOBAL_MAX=$(printf '%s' "$KERNEL_STATUS" | jq -r '.status.budgets.maxGlobalOperations // 100')
+        echo "[spec-drive] Task: $CURRENT_TASK | Stage: $CURRENT_STAGE | Accepted: $ACCEPTED_TASKS/$TOTAL_TASKS" >&2
+        echo "[spec-drive] Global budget: $GLOBAL_USED/$GLOBAL_MAX" >&2
+    fi
 fi
 
 echo "[spec-drive] Awaiting approval: $AWAITING" >&2
@@ -126,8 +148,14 @@ if [ "$AWAITING" = "true" ]; then
             echo "[spec-drive] Tasks planned. Run /spec-drive:implement to start execution." >&2
             ;;
     esac
-elif [ "$PHASE" = "execution" ] && [ "$TASK_INDEX" -lt "$TOTAL_TASKS" ]; then
-    echo "[spec-drive] Execution in progress. Run /spec-drive:implement to continue." >&2
+elif [ "$PHASE" = "execution" ] && [ -n "$KERNEL_STATUS" ]; then
+    if [ "$CURRENT_STAGE" = "completed" ] && [ "$CURRENT_TASK" = "none" ]; then
+        echo "[spec-drive] Execution completed by kernel." >&2
+    elif [ "$CURRENT_STAGE" = "indeterminate" ] || [ "$CURRENT_STAGE" = "recovery_required" ]; then
+        echo "[spec-drive] Execution requires explicit recovery. Run /spec-drive:status." >&2
+    else
+        echo "[spec-drive] Execution in progress. Run /spec-drive:implement to resume through the kernel." >&2
+    fi
 fi
 
 # --- Output Original Goal from .progress.md ---

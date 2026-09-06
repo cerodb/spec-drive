@@ -823,9 +823,9 @@ gate_poc() {
   local changed="$TMP_ROOT/changed-after-approve"
   write_fixture "$changed"
   approve_all "$changed"
-  printf '\nChanged bytes.\n' >> "$changed/spec/tasks.md"
+  perl -0pi -e 's/Valid plan passes\./Changed executable condition./' "$changed/spec/tasks.md"
   if run_preflight "$changed"; then
-    fail "changed bytes passed preflight after approval"
+    fail "changed executable task bytes passed preflight after approval"
   fi
   assert_json_error_contains "$changed/preflight.out" "tasks hash is stale"
 
@@ -1050,7 +1050,7 @@ ledger_poc() {
   if run_next "$legacy" "legacy"; then
     fail "ambiguous legacy state was silently migrated"
   fi
-  assert_json_error_contains "$legacy/next-legacy.out" "legacy migration is not supported yet"
+  assert_json_error_contains "$legacy/next-legacy.out" "legacy index-only state is not supported"
   node -e '
     const fs = require("fs");
     const state = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
@@ -1836,6 +1836,15 @@ ownership_poc() {
     if (!state.paused || state.paused.activeAttemptId !== process.argv[2]) process.exit(1);
     if (state.taskStates["1.1"].executionAttempts !== 1 || state.budgets.globalBudgetUsed !== 1) process.exit(1);
   ' "$dir/spec/.spec-drive-state.json" "$attempt" || fail "pause reset counters or lost active attempt"
+  run_resume "$dir" "paused" || fail "paused ledger did not resume: $(cat "$dir/resume-paused.err")"
+  assert_json_ok "$dir/resume-paused.out"
+  node -e '
+    const fs = require("fs");
+    const resumed = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    const state = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+    if (resumed.ledger.currentTaskId !== "1.1" || resumed.ledger.activeAttemptId !== process.argv[3]) process.exit(1);
+    if (state.taskStates["1.1"].executionAttempts !== 1 || state.budgets.globalBudgetUsed !== 1) process.exit(1);
+  ' "$dir/resume-paused.out" "$dir/spec/.spec-drive-state.json" "$attempt" || fail "pause/resume changed identity or budgets"
 }
 
 all() {

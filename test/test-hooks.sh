@@ -165,7 +165,7 @@ else
   fail "stop-watcher did not report ambiguous active project selection"
 fi
 
-echo "-- Numeric guardrails..."
+echo "-- Legacy execution state refuses ordinal fallback..."
 rm -rf "$TMP_HOME/spec-drive-projects/P101"
 cat >"$TMP_HOME/spec-drive-projects/P100/spec/.spec-drive-state.json" <<'EOF'
 {"name":"P100","phase":"execution","awaitingApproval":false,"mode":"normal","taskIndex":0,"totalTasks":1,"taskIteration":1,"maxTaskIterations":5,"globalIteration":"abc","maxGlobalIterations":"xyz"}
@@ -174,10 +174,10 @@ NUMERIC_OUTPUT="$(HOME="$TMP_HOME" XDG_CONFIG_HOME="$TMP_HOME/.config" bash hook
 {"cwd":"/tmp"}
 EOF
 )"
-if echo "$NUMERIC_OUTPUT" | grep -q "Continue spec: P100"; then
-  ok "stop-watcher safely normalizes non-numeric iteration values"
+if echo "$NUMERIC_OUTPUT" | grep -q "cannot resume P100"; then
+  ok "stop-watcher refuses legacy index fallback"
 else
-  fail "stop-watcher did not safely handle non-numeric iteration values"
+  fail "stop-watcher attempted legacy ordinal continuation"
 fi
 
 echo "-- Workspace config precedence..."
@@ -197,7 +197,7 @@ WORKSPACE_OUTPUT="$(HOME="$TMP_HOME" XDG_CONFIG_HOME="$TMP_HOME/.config" bash ho
 {"cwd":"$WORKSPACE/repo"}
 EOF
 )"
-if echo "$WORKSPACE_OUTPUT" | grep -q "Continue spec: P200"; then
+if echo "$WORKSPACE_OUTPUT" | grep -q "cannot resume P200"; then
   ok "workspace config resolves relative projectRoot from git root"
 else
   fail "workspace config did not resolve relative projectRoot from git root"
@@ -216,10 +216,102 @@ XDG_OUTPUT="$(HOME="$TMP_HOME" XDG_CONFIG_HOME="$TMP_HOME/.config" bash hooks/sc
 {"cwd":"$WORKSPACE/repo"}
 EOF
 )"
-if echo "$XDG_OUTPUT" | grep -q "Continue spec: P201"; then
+if echo "$XDG_OUTPUT" | grep -q "cannot resume P201"; then
   ok "xdg config is used when workspace config is absent"
 else
   fail "xdg config was not used when workspace config is absent"
+fi
+
+echo "-- Pause snapshot lifecycle..."
+PAUSE_HOME="$(cd "$(mktemp -d)" && pwd -P)"
+TEST_TEMP_DIRS+=("$PAUSE_HOME")
+PAUSE_PROJECT="$PAUSE_HOME/projects/P202"
+mkdir -p "$PAUSE_HOME/.config/spec-drive" "$PAUSE_HOME/bin" "$PAUSE_PROJECT/spec"
+git -C "$PAUSE_PROJECT" init -q
+cat >"$PAUSE_HOME/.config/spec-drive/config.json" <<EOF
+{"projectRoot":"$PAUSE_HOME/projects"}
+EOF
+cat >"$PAUSE_HOME/bin/node" <<'EOF'
+#!/bin/bash
+REQUEST="$(cat)"
+OP="$(printf '%s' "$REQUEST" | jq -r '.op // empty')"
+if [ "$OP" = "resume" ]; then
+  printf '%s\n' '{"ok":true}'
+elif [ "$OP" = "status" ]; then
+  SPEC_DIR="$(printf '%s' "$REQUEST" | jq -r '.specDir')"
+  jq '{
+    ok: true,
+    status: {
+      currentTaskId: (.currentTaskId // null),
+      currentStage: (.currentStage // "preflight"),
+      activeAttemptId: (.activeAttemptId // null),
+      budgets: {globalBudgetUsed: 1, maxGlobalOperations: 100}
+    }
+  }' "$SPEC_DIR/.spec-drive-state.json"
+else
+  exit 1
+fi
+EOF
+chmod +x "$PAUSE_HOME/bin/node"
+
+cat >"$PAUSE_PROJECT/spec/.spec-drive-state.json" <<'EOF'
+{
+  "name": "P202",
+  "phase": "execution",
+  "awaitingApproval": false,
+  "mode": "normal",
+  "currentTaskId": null,
+  "currentStage": "preflight",
+  "activeAttemptId": null,
+  "paused": {
+    "reason": "operator pause",
+    "pausedAt": "2026-09-06T00:00:00.000Z",
+    "currentTaskId": null,
+    "currentStage": "preflight",
+    "activeAttemptId": null
+  }
+}
+EOF
+PAUSE_ACTIVE_OUTPUT="$(PATH="$PAUSE_HOME/bin:$PATH" HOME="$PAUSE_HOME" XDG_CONFIG_HOME="$PAUSE_HOME/.config" bash hooks/scripts/stop-watcher.sh <<EOF
+{"cwd":"$PAUSE_PROJECT"}
+EOF
+)"
+if [ -z "$PAUSE_ACTIVE_OUTPUT" ]; then
+  ok "stop-watcher suppresses continuation while the pause snapshot still matches, including null identities"
+else
+  fail "stop-watcher continued while the pause snapshot still matched the ledger"
+fi
+
+jq '.currentTaskId = "1.1" | .currentStage = "ready" | .activeAttemptId = "attempt-2"' \
+  "$PAUSE_PROJECT/spec/.spec-drive-state.json" >"$PAUSE_PROJECT/spec/.spec-drive-state.next.json"
+mv "$PAUSE_PROJECT/spec/.spec-drive-state.next.json" "$PAUSE_PROJECT/spec/.spec-drive-state.json"
+PAUSE_HISTORICAL_OUTPUT="$(PATH="$PAUSE_HOME/bin:$PATH" HOME="$PAUSE_HOME" XDG_CONFIG_HOME="$PAUSE_HOME/.config" bash hooks/scripts/stop-watcher.sh <<EOF
+{"cwd":"$PAUSE_PROJECT"}
+EOF
+)"
+if echo "$PAUSE_HISTORICAL_OUTPUT" | grep -q "Continue spec: P202" \
+  && echo "$PAUSE_HISTORICAL_OUTPUT" | grep -q "Kernel task: 1.1 | Stage: ready"; then
+  ok "stop-watcher resumes after the ledger advances beyond the historical pause snapshot"
+else
+  fail "stop-watcher suppressed continuation after the ledger advanced beyond the pause snapshot"
+fi
+
+echo "-- Execution hooks use kernel protocol..."
+if grep -q "'{op:\"status\", specDir:\$specDir}'" hooks/scripts/context-loader.sh; then
+  ok "context-loader queries kernel status"
+else
+  fail "context-loader does not query kernel status"
+fi
+if grep -q "'{op:\"resume\", specDir:\$specDir, repoRoot:\$repoRoot}'" hooks/scripts/stop-watcher.sh \
+  && grep -q "'{op:\"status\", specDir:\$specDir}'" hooks/scripts/stop-watcher.sh; then
+  ok "stop-watcher resumes and then queries kernel status"
+else
+  fail "stop-watcher is not connected to kernel resume/status"
+fi
+if ! grep -Eq 'TASK_INDEX|taskIndex.*[<>+]|ALL_TASKS_COMPLETE\$' hooks/scripts/context-loader.sh hooks/scripts/stop-watcher.sh; then
+  ok "execution hooks do not select or close by ordinal/sentinel"
+else
+  fail "execution hooks retain ordinal or sentinel execution logic"
 fi
 
 echo "-- Scoped per-key config resolution..."

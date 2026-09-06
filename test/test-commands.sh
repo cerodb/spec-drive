@@ -269,6 +269,32 @@ else
   fail "cancel command missing trash-first deletion guidance"
 fi
 
+echo "-- Checking kernel-owned execution entrypoints..."
+for OP in resume next report accept; do
+  assert_contains commands/implement.md "\\\"op\\\"[[:space:]]*:[[:space:]]*\\\"$OP\\\"" "implement delegates $OP to execution kernel"
+done
+assert_contains commands/implement.md 'adapterEvidence' "implement keeps adapter start evidence separate"
+assert_contains commands/implement.md 'not_started' "implement distinguishes proven no-start"
+assert_contains commands/implement.md 'unknown' "implement distinguishes unknown start"
+assert_contains commands/implement.md 'sentinel.*never sufficient|never sufficient.*sentinel' "implement rejects sentinel-only completion"
+assert_not_contains commands/implement.md 'taskIndex[[:space:]]*\+\+|taskIndex.*0-based|Index to.*taskIndex' "implement has no ordinal task advancement"
+assert_contains commands/cancel.md '"op":"pause"' "cancel delegates default cancellation to kernel pause"
+assert_not_contains commands/cancel.md 'rm -f.*\.spec-drive-state\.json' "cancel does not delete execution state"
+assert_contains commands/status.md '"op":"status"' "status delegates execution status to kernel"
+assert_contains commands/status.md 'currentTaskId' "status displays currentTaskId"
+assert_contains commands/status.md 'currentStage' "status displays currentStage"
+assert_contains commands/status.md 'budgets' "status displays kernel budgets"
+
+for ADAPTER in agents/executor.md agents/executor-subprocess.md agents/qa-engineer.md; do
+  assert_contains "$ADAPTER" 'EXECUTOR_REPORT' "$ADAPTER emits structured identity-bound report"
+  assert_contains "$ADAPTER" 'sentinel.*(compatibility|not).*|compatibility.*sentinel' "$ADAPTER makes sentinel non-authoritative"
+  assert_contains "$ADAPTER" 'final Verify|authoritative final Verify' "$ADAPTER leaves final Verify to kernel"
+done
+
+assert_contains skills/delegation-principle/SKILL.md 'sole authority' "delegation skill names kernel as sole authority"
+assert_contains skills/spec-workflow/SKILL.md 'currentTaskId' "workflow skill documents ID-based execution"
+assert_contains skills/spec-workflow/references/phase-transitions.md 'Proven `not_started`' "phase transitions preserve no-start attempts"
+
 if grep -q 'mktemp "\${state_file}\.XXXXXX"' commands/research.md; then
   ok "research command uses same-directory temp file for state updates"
 else

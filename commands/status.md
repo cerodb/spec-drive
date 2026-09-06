@@ -1,101 +1,45 @@
 ---
-description: Show current spec status and progress
+description: Show kernel-owned workflow and execution status
 argument-hint: ""
 allowed-tools: [Read, Bash, Glob]
 ---
 
 # /spec-drive:status
 
-Show the current state of a spec-drive project.
+Resolve one cwd-bound spec directory. Refuse ambiguous fallback discovery. For execution information, invoke `hooks/scripts/execution-kernel.mjs` with:
 
-## Steps
-
-### 1. Find active project
-
-Look for `.spec-drive-state.json` in:
-1. Current working directory
-2. `./spec/` subdirectory of cwd
-3. Parent directory of cwd (if cwd is `spec/`)
-
-If not found, scan `~/spec-drive-projects/` for any directory containing `.spec-drive-state.json`.
-
-If no active project is found:
+```json
+{"op":"status","specDir":"<specDir>"}
 ```
-No active spec-drive project found.
 
-To start a new project: /spec-drive:new
-To resume from a spec directory: cd into the project and run /spec-drive:status again
-```
-Stop here.
+The returned `status` object is authoritative. Do not count checkboxes or interpret `taskIndex`.
 
-### 2. Read state
+Display:
 
-Read `.spec-drive-state.json` and extract all fields:
-- `name` — project name
-- `phase` — current phase (idea, research, requirements, design, tasks, execution)
-- `mode` — normal or auto
-- `taskIndex` — current task (0-based)
-- `totalTasks` — total tasks count
-- `taskIteration` — retry count for current task
-- `globalIteration` — total loop iterations
-- `awaitingApproval` — whether waiting for user approval
-
-### 3. Display status
-
-Output in this format:
-
-```
+```text
 === Spec-Drive Status ===
 
-Project:    {name}
-Phase:      {phase}
-Mode:       {mode}
-Tasks:      {taskIndex}/{totalTasks} completed
-Iteration:  {globalIteration} (task retry: {taskIteration})
+Project:          {name}
+Phase:            {phase}
+Mode:             {mode}
+Current task:     {status.currentTaskId or "none"}
+Stage:            {status.currentStage}
+Active attempt:   {status.activeAttemptId or "none"}
+Last failure:     {status.lastFailureClass or "none"}
+Accepted tasks:   {count of status.taskStates with status=accepted}/{status.taskOrder.length}
+Dispatch budget:  {current task dispatchFailures}/{status.budgets.maxDispatchFailures}
+Attempt budget:   {current task executionAttempts}/{status.budgets.maxExecutionAttempts}
+Global budget:    {status.budgets.globalBudgetUsed}/{status.budgets.maxGlobalOperations}
 ```
 
-### 4. Handle awaitingApproval
+`name`, `phase`, `mode`, and `awaitingApproval` may be read for lifecycle presentation from the same state file; they must never override the kernel execution fields above. Show the last three learnings and current blockers as informational projections only.
 
-If `awaitingApproval` is `true`, append:
+Stage guidance:
 
-```
->> Awaiting approval: {phase} phase completed.
-   Next: /spec-drive:{next-phase-command} to continue
-```
+- `ready`: `/spec-drive:implement` can request the next kernel dispatch.
+- `dispatching` or `indeterminate`: do not redispatch; inspect the attempt and recover explicitly if start is uncertain.
+- `reported_complete` or a promotion stage: run `/spec-drive:implement` so kernel `resume`/`accept` can finish.
+- `recovery_required` or `blocked`: show `lastFailureClass` and require the kernel recovery or upstream correction indicated by the error.
+- `completed` with `currentTaskId=null`: all required tasks are closed by the kernel.
 
-Map the completed phase to the next command:
-- research → `/spec-drive:requirements`
-- requirements → `/spec-drive:design`
-- design → `/spec-drive:tasks`
-- tasks → `/spec-drive:implement`
-
-### 5. Handle active execution
-
-If `phase` is `execution` and `awaitingApproval` is `false`, append:
-
-```
->> Executing task {taskIndex + 1} of {totalTasks} (retry {taskIteration}/{maxTaskIterations})
-```
-
-### 6. Show recent learnings
-
-Read `.progress.md` from the project's spec directory (`basePath`). Extract the last 3 entries from the `## Learnings` section.
-
-If learnings exist, append:
-
-```
-Recent learnings:
-- {learning 1}
-- {learning 2}
-- {learning 3}
-```
-
-### 7. Show blockers
-
-Read the `## Blockers` section from `.progress.md`. If any blockers are listed (other than "None"), append:
-
-```
-!! Blockers:
-- {blocker 1}
-- {blocker 2}
-```
+Never claim completion from transcript sentinels, checkbox counts, or an executor report.

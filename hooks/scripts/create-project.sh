@@ -191,16 +191,24 @@ jq -n \
     name: $name,
     basePath: $basePath,
     phase: $phase,
+    schemaVersion: 2,
     mode: $mode,
     researchDepth: $researchDepth,
-    taskIndex: 0,
-    totalTasks: 0,
-    taskIteration: 1,
-    maxTaskIterations: 5,
-    globalIteration: 1,
-    maxGlobalIterations: 100,
     awaitingApproval: false,
-    taskResults: {}
+    approvals: {},
+    taskOrder: [],
+    currentTaskId: null,
+    currentStage: "preflight",
+    activeAttemptId: null,
+    lastFailureClass: null,
+    budgets: {
+      maxDispatchFailures: 3,
+      maxExecutionAttempts: 5,
+      maxGlobalOperations: 100,
+      globalBudgetUsed: 0
+    },
+    taskStates: {},
+    attempts: {}
   }' >"$spec_dir/.spec-drive-state.json" \
   || die_operational "could not write state file"
 
@@ -213,7 +221,13 @@ jq -e 'keys == ["projectSlug", "scope"] and .scope == "project" and (.projectSlu
 jq empty "$spec_dir/.spec-drive-state.json" >/dev/null \
   || die_operational "state JSON validation failed"
 jq -e --arg name "$project_slug" --arg basePath "$destination/spec" --arg mode "$mode" --arg researchDepth "$research_depth" \
-  '.name == $name and .basePath == $basePath and .phase == "research" and .mode == $mode and .researchDepth == $researchDepth and .awaitingApproval == false and (.taskResults | type == "object")' \
+  '.name == $name and .basePath == $basePath and .phase == "research" and .schemaVersion == 2 and
+   .mode == $mode and .researchDepth == $researchDepth and .awaitingApproval == false and
+   .currentTaskId == null and .currentStage == "preflight" and .activeAttemptId == null and
+   (.approvals | type == "object") and (.taskOrder | type == "array") and
+   (.taskStates | type == "object") and (.attempts | type == "object") and
+   .budgets == {maxDispatchFailures:3, maxExecutionAttempts:5, maxGlobalOperations:100, globalBudgetUsed:0} and
+   (has("taskIndex") | not) and (has("taskResults") | not)' \
   "$spec_dir/.spec-drive-state.json" >/dev/null \
   || die_operational "state contract validation failed"
 
