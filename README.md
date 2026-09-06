@@ -31,6 +31,32 @@ This repo is not equally automatic everywhere.
 
 Honest version: this repo is fully usable today, but only Claude-style runtimes have native plugin metadata in-tree.
 
+Minimum runtime requirements:
+
+- Node.js >=18 for `hooks/scripts/execution-kernel.mjs` and the shell test harness JSON helpers
+- `bash`
+- `git`
+- `jq`
+
+The execution kernel is the only owner of execution state. Adapters for Claude agents, subprocess
+CLIs, and inherited-session execution all use the same kernel operations:
+
+- `approve` records explicit artifact approval evidence and the artifact SHA-256.
+- `preflight` validates approved artifacts, task identity, trace coverage, paths, budgets, and safe Verify contracts before dispatch.
+- `next` reserves one stable `taskId`/`attemptId`, creates or reuses the attempt worktree, and returns the dispatch envelope.
+- `report` accepts one identity-matching executor report and records adapter start evidence.
+- `accept` runs the authoritative Verify, promotes only declared files, commits code tasks, and updates tracking.
+- `resume`, `recover`, `pause`, and `status` continue, repair, preserve, or inspect the same ledger.
+
+Adapter output is untrusted until `report` and `accept` succeed. Invalid envelopes are rejected by
+identity and do not create private history, change budgets, or replace the kernel ledger. Legacy
+execution state that only has ordinal/index fields is rejected with original bytes preserved; modern
+ID-based state may retain old counters only as compatibility projections.
+
+Only explicit approval evidence can advance artifact gates. Auto mode does not approve generated
+artifacts. Execution uses cooperative locks and task leases so one coordinator owns promotion at a
+time, while dirty target work, unrelated metadata, and retry worktree bytes are preserved instead of
+being reset or deleted.
 
 ## Adaptive Model Router
 
@@ -90,7 +116,7 @@ All shell scripts avoid GNU-only extensions:
 - `readlink -f` replaced with a portable `portable_realpath()` helper (python3 → realpath → cd/pwd -P fallback)
 - `find -mmin` replaced with a portable mtime check (python3 → stat -c %Y on Linux → stat -f %m on macOS)
 
-Prerequisites on macOS: `bash`, `git`, `jq`. Install `jq` via Homebrew (`brew install jq`) if not already present.
+Prerequisites on macOS: Node.js >=18, `bash`, `git`, and `jq`. Install `jq` via Homebrew (`brew install jq`) if not already present.
 
 ## Release Notes
 
@@ -114,6 +140,7 @@ Prerequisites on macOS: `bash`, `git`, `jq`. Install `jq` via Homebrew (`brew in
 
 ## Requirements
 
+- `node` >=18
 - `bash`
 - `git`
 - `jq`
@@ -165,6 +192,7 @@ bash test/test-hooks.sh
 bash test/test-commands.sh
 bash test/test-schema.sh
 bash test/test-cross-cli.sh
+bash test/test-execution-kernel.sh gate-poc contracts ledger-poc adapters
 ```
 
 For runtime-specific install steps, see [INSTALL.md](./INSTALL.md).

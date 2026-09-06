@@ -394,6 +394,7 @@ run_preflight() {
 run_next() {
   local dir="$1"
   local name="$2"
+  local actor="${3:-implement}"
   local input="$dir/next-$name.json"
   node -e '
     const fs = require("fs");
@@ -401,9 +402,9 @@ run_next() {
       op: "next",
       specDir: process.argv[2],
       repoRoot: process.argv[3],
-      actor: "implement"
+      actor: process.argv[4]
     }));
-  ' "$input" "$dir/spec" "$dir/repo"
+  ' "$input" "$dir/spec" "$dir/repo" "$actor"
   kernel_json "$input" "$dir/next-$name.out" "$dir/next-$name.err"
 }
 
@@ -1093,6 +1094,97 @@ accept_code_task() {
   assert_json_ok "$dir/report-$name-report.out"
   run_accept "$dir" "$name-accept" "$attempt" || fail "$name accept failed: $(cat "$dir/accept-$name-accept.err")"
   assert_json_ok "$dir/accept-$name-accept.out"
+}
+
+adapters_poc() {
+  local dir="$TMP_ROOT/adapters"
+  write_flow_fixture "$dir"
+  approve_all "$dir"
+  run_preflight "$dir" || fail "adapters preflight failed: $(cat "$dir/preflight.err")"
+  assert_json_ok "$dir/preflight.out"
+
+  run_next "$dir" "agent" || fail "agent adapter next failed: $(cat "$dir/next-agent.err")"
+  assert_json_ok "$dir/next-agent.out"
+  local agent_attempt agent_worktree before_invalid run_id
+  agent_attempt="$(json_get "$dir/next-agent.out" "dispatch.attemptId")"
+  agent_worktree="$(json_get "$dir/next-agent.out" "dispatch.worktreePath")"
+  run_id="$(json_get "$dir/spec/.spec-drive-state.json" "runId")"
+  before_invalid="$(sha_file "$dir/spec/.spec-drive-state.json")"
+  node -e '
+    const fs = require("fs");
+    fs.writeFileSync(process.argv[1], JSON.stringify({
+      op: "report",
+      specDir: process.argv[2],
+      repoRoot: process.argv[3],
+      attemptId: process.argv[4],
+      adapterEvidence: "started",
+      report: {
+        attemptId: "forged-private-attempt",
+        taskId: "1.2",
+        outcome: "task_complete",
+        startedWork: true,
+        summary: "invalid envelope must not fork history"
+      }
+    }));
+  ' "$dir/report-agent-invalid.json" "$dir/spec" "$dir/repo" "$agent_attempt"
+  if kernel_json "$dir/report-agent-invalid.json" "$dir/report-agent-invalid.out" "$dir/report-agent-invalid.err"; then
+    fail "invalid adapter envelope was accepted"
+  fi
+  assert_json_error_contains "$dir/report-agent-invalid.out" "report identity does not match attempt"
+  [[ "$(sha_file "$dir/spec/.spec-drive-state.json")" == "$before_invalid" ]] || fail "invalid adapter envelope mutated kernel ledger"
+  node -e '
+    const fs = require("fs");
+    const state = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    if (Object.keys(state.attempts).length !== 1) process.exit(1);
+    if (state.currentTaskId !== "1.1" || state.activeAttemptId !== process.argv[2]) process.exit(1);
+    if (state.taskStates["1.1"].executionAttempts !== 1 || state.budgets.globalBudgetUsed !== 1) process.exit(1);
+  ' "$dir/spec/.spec-drive-state.json" "$agent_attempt" || fail "invalid adapter envelope created private history or changed budgets"
+
+  mkdir -p "$agent_worktree/src"
+  printf 'alpha\n' > "$agent_worktree/src/alpha.txt"
+  run_report "$dir" "agent" "$agent_attempt" "1.1" "task_complete" "none" "started" "true" \
+    || fail "agent adapter report failed: $(cat "$dir/report-agent.err")"
+  run_accept "$dir" "agent" "$agent_attempt" || fail "agent adapter accept failed: $(cat "$dir/accept-agent.err")"
+  assert_json_ok "$dir/accept-agent.out"
+
+  run_next "$dir" "subprocess" || fail "subprocess adapter next failed: $(cat "$dir/next-subprocess.err")"
+  assert_json_ok "$dir/next-subprocess.out"
+  local subprocess_attempt subprocess_worktree
+  subprocess_attempt="$(json_get "$dir/next-subprocess.out" "dispatch.attemptId")"
+  subprocess_worktree="$(json_get "$dir/next-subprocess.out" "dispatch.worktreePath")"
+  [[ "$(json_get "$dir/next-subprocess.out" "dispatch.mechanism")" == "subprocess" ]] || fail "subprocess adapter did not receive subprocess contract"
+  mkdir -p "$subprocess_worktree/src"
+  printf 'beta\n' > "$subprocess_worktree/src/tracked name.txt"
+  run_report "$dir" "subprocess" "$subprocess_attempt" "1.2" "task_complete" "none" "started" "true" \
+    || fail "subprocess adapter report failed: $(cat "$dir/report-subprocess.err")"
+  run_accept "$dir" "subprocess" "$subprocess_attempt" || fail "subprocess adapter accept failed: $(cat "$dir/accept-subprocess.err")"
+  assert_json_ok "$dir/accept-subprocess.out"
+
+  run_next "$dir" "inherit" || fail "inherit adapter next failed: $(cat "$dir/next-inherit.err")"
+  assert_json_ok "$dir/next-inherit.out"
+  local inherit_attempt
+  inherit_attempt="$(json_get "$dir/next-inherit.out" "dispatch.attemptId")"
+  [[ "$(json_get "$dir/next-inherit.out" "dispatch.taskId")" == "V1" ]] || fail "inherit adapter did not resume shared task identity"
+  [[ "$(json_get "$dir/next-inherit.out" "dispatch.mechanism")" == "inherit" ]] || fail "inherit adapter did not receive inherit contract"
+  run_report "$dir" "inherit" "$inherit_attempt" "V1" "task_complete" "none" "started" "true" \
+    || fail "inherit adapter report failed: $(cat "$dir/report-inherit.err")"
+  run_accept "$dir" "inherit" "$inherit_attempt" || fail "inherit adapter accept failed: $(cat "$dir/accept-inherit.err")"
+  assert_json_ok "$dir/accept-inherit.out"
+
+  node -e '
+    const fs = require("fs");
+    const state = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    const attempts = [process.argv[3], process.argv[4], process.argv[5]].map((id) => state.attempts[id]);
+    if (state.runId !== process.argv[2]) process.exit(1);
+    if (state.currentTaskId !== null || state.currentStage !== "completed") process.exit(1);
+    if (state.budgets.globalBudgetUsed !== 3) process.exit(1);
+    if (state.taskStates["1.1"].executionAttempts !== 1 || state.taskStates["1.2"].executionAttempts !== 1 || state.taskStates.V1.executionAttempts !== 1) process.exit(1);
+    if (attempts.some((a) => !a || a.state !== "accepted")) process.exit(1);
+    if (attempts.some((a) => a.actor !== "implement")) process.exit(1);
+  ' "$dir/spec/.spec-drive-state.json" "$run_id" "$agent_attempt" "$subprocess_attempt" "$inherit_attempt" \
+    || fail "adapters did not share one accepted ledger identity and budget"
+  [[ "$(cat "$dir/repo/src/alpha.txt")" == "alpha" ]] || fail "adapter flow lost alpha bytes"
+  [[ "$(cat "$dir/repo/src/tracked name.txt")" == "beta" ]] || fail "adapter flow lost beta bytes"
 }
 
 flow_poc() {
@@ -1849,7 +1941,9 @@ ownership_poc() {
 
 all() {
   gate_poc
+  contracts_poc
   ledger_poc
+  adapters_poc
   flow_poc
   crash_poc
   ownership_poc
@@ -1867,6 +1961,7 @@ for mode in "$@"; do
     crash) crash_poc ;;
     ownership) ownership_poc ;;
     contracts) contracts_poc ;;
+    adapters) adapters_poc ;;
     all) all ;;
     *) fail "unknown mode: $mode" ;;
   esac

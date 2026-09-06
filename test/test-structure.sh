@@ -199,31 +199,31 @@ else
   FAIL=$((FAIL + 1))
 fi
 
-if grep -q 'Before running it, inspect the command string for clearly unsafe patterns' agents/executor.md; then
+if grep -q 'Run focused, non-destructive checks when useful for feedback' agents/executor.md; then
   PASS=$((PASS + 1))
 else
-  echo "FAIL: executor missing unsafe verify preflight"
+  echo "FAIL: executor missing provisional non-destructive check boundary"
   FAIL=$((FAIL + 1))
 fi
 
-if grep -q 'Failure classification:' agents/executor.md; then
+if grep -q 'Allowed failure classes are `env_error`, `logic_error`, `verify_error`, `design_error`, and `external_change_error`' agents/executor.md; then
   PASS=$((PASS + 1))
 else
-  echo "FAIL: executor missing failure classification guidance"
+  echo "FAIL: executor missing kernel report failure classes"
   FAIL=$((FAIL + 1))
 fi
 
-if grep -q 'Retry memory:' agents/executor.md; then
+if grep -q 'preserve partial work already present in the attempt worktree' agents/executor.md; then
   PASS=$((PASS + 1))
 else
-  echo "FAIL: executor missing retry-memory guidance"
+  echo "FAIL: executor missing retry work preservation guidance"
   FAIL=$((FAIL + 1))
 fi
 
-if grep -q 'Progressive context escalation for retries:' agents/executor.md; then
+if grep -q 'The kernel creates a new attempt identity when retry is allowed' agents/executor.md; then
   PASS=$((PASS + 1))
 else
-  echo "FAIL: executor missing progressive retry-context guidance"
+  echo "FAIL: executor missing kernel retry identity guidance"
   FAIL=$((FAIL + 1))
 fi
 
@@ -274,7 +274,7 @@ echo "Passed: $PASS | Failed: $FAIL"
 if [ "$FAIL" -gt 0 ]; then
   echo ""
   echo "Missing:"
-  for m in "${MISSING[@]}"; do
+  for m in "${MISSING[@]:-}"; do
     echo "  - $m"
   done
   exit 1

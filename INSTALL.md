@@ -28,6 +28,7 @@ clawhub install spec-drive
 
 Install these first:
 
+- `node` >=18
 - `git`
 - `bash`
 - `jq`
@@ -35,7 +36,7 @@ Install these first:
 
 Optional but recommended:
 
-- `node` + `npm` so you can run the bundled test suite with `npm test`
+- `npm` so you can run the bundled test suite with `npm test`
 
 ## 1. Clone the Repo
 
@@ -64,6 +65,7 @@ bash test/test-hooks.sh
 bash test/test-commands.sh
 bash test/test-schema.sh
 bash test/test-cross-cli.sh
+bash test/test-execution-kernel.sh gate-poc contracts ledger-poc adapters
 ```
 
 ## 3. Configure Project Storage
@@ -172,6 +174,9 @@ Minimum recommended contract in Codex:
 
 - session start should surface active spec context if present
 - stop/end-of-turn should decide whether execution should continue
+- execution must call `hooks/scripts/execution-kernel.mjs` for `approve`, `preflight`, `next`, `report`, `accept`, `resume`, `recover`, `pause`, and `status`
+- adapter reports must use the exact `taskId` and `attemptId` returned by the kernel dispatch envelope
+- invalid or identity-mismatched envelopes must be rejected without creating adapter-private history or changing kernel budgets
 - artifact chain should remain unchanged:
   - `idea.md`
   - `research.md`
@@ -208,6 +213,32 @@ Recommended approach:
 4. Reimplement session-start and stop logic using Coda's own runtime hooks or orchestration layer.
 
 Treat both Kiro and Coda support as manual adapter ports, not native packaged installs.
+
+## Execution Kernel Safety Contract
+
+Runtime adapters may be native agents, subprocess CLIs, or inherited-session execution. They all
+share one kernel ledger in `spec/.spec-drive-state.json`; adapters must not keep a second execution
+ledger or close tasks from private state.
+
+Kernel operations:
+
+- `approve`: records explicit human approval evidence and the artifact SHA-256.
+- `preflight`: validates approved artifact hashes, task IDs, trace coverage, paths, Verify commands, and budget shape.
+- `next`: reserves a stable task/attempt identity, updates dispatch and global budgets, and returns the only valid dispatch envelope.
+- `report`: accepts one identity-matching executor report plus adapter start evidence.
+- `accept`: runs authoritative Verify, promotes only declared files, commits code tasks, and projects tracking.
+- `resume`, `recover`, `pause`, and `status`: continue, repair, preserve, and inspect the same durable state.
+
+Approvals are explicit. Auto mode does not approve generated artifacts, and generated tasks cannot
+enter execution until `tasks.md` has matching approval evidence.
+
+Legacy execution state based only on index or ordinal fields is rejected; original bytes are
+preserved. Modern ID-based state may still carry old counters for display, but `currentTaskId`,
+`taskOrder`, `taskStates`, `attempts`, and `budgets` are authoritative.
+
+The kernel enforces exclusive promotion with locks and task leases. Rejections preserve useful work:
+dirty target bytes, unrelated metadata, and retry worktree content are not reset, cleaned, stashed,
+or deleted by the adapter.
 
 ## Available Commands
 
