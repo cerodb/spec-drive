@@ -43,7 +43,34 @@ Cannot generate design: current phase is "{phase}".
 Design can only be generated after the requirements phase completes.
 ```
 
-### Step 3: Validate Phase Checklist
+### Step 3: Approve the requirements artifact
+
+Use the execution kernel as the only approval writer. Read the current SHA-256 of
+`{basePath}/requirements.md` and compare it with
+`state.approvals.requirements.sha256` and its non-empty `approvalEvidence`.
+First confirm the file exists so the checklist's missing-artifact diagnostic remains actionable.
+
+- If the current bytes already have matching explicit approval, capture that digest as
+  `approvedRequirementsSha` and continue.
+- Otherwise ask the user to explicitly approve the current requirements bytes. Do not infer approval from
+  `mode: "auto"`, from invoking this command, or from successful generation. On confirmation, preserve the
+  user's approval statement as `approvalEvidence` and invoke:
+
+```json
+{
+  "op": "approve",
+  "specDir": "{basePath}",
+  "artifact": "requirements",
+  "expectedSha256": "<current requirements.md SHA-256>",
+  "approvalEvidence": "<explicit user approval>"
+}
+```
+
+Pass the JSON on stdin to `${CLAUDE_PLUGIN_ROOT}/hooks/scripts/execution-kernel.mjs`. If `approve` fails,
+stop with its diagnostic. Capture the returned `sha256` as `approvedRequirementsSha`; do not recompute it
+after approval.
+
+### Step 4: Validate Phase Checklist
 
 Read `skills/spec-workflow/references/phase-checklists.md` from the plugin root.
 
@@ -77,7 +104,7 @@ Validate the **requirements -> design** checklist:
 If ANY checklist item fails, stop immediately. Output the specific failure message and suggested fix. Do NOT proceed to agent delegation.
 </mandatory>
 
-### Step 4: Delegate to Architect Agent
+### Step 5: Delegate to Architect Agent
 
 All checklist items passed. Delegate to the `spec-drive:architect` agent via the Agent tool:
 
@@ -86,12 +113,17 @@ Agent: spec-drive:architect
 
 Generate technical design for the project at basePath: {basePath}
 
-Read {basePath}/idea.md, {basePath}/research.md, and {basePath}/requirements.md, then produce {basePath}/design.md with architecture overview (including Mermaid diagram), components (with AC traceability), data flow, technical decisions (with rationale referencing AC-X.Y/NFR-N), technical risks, and error handling sections.
+Read {basePath}/idea.md, {basePath}/research.md, and the approved {basePath}/requirements.md, then produce {basePath}/design.md with architecture overview (including Mermaid diagram), components (with AC traceability), data flow, technical decisions (with rationale referencing AC-X.Y/NFR-N), technical risks, and error handling sections. Set design.md frontmatter requirements_sha exactly to approvedRequirementsSha: {approvedRequirementsSha}.
 ```
 
 Wait for the agent to complete and confirm that `{basePath}/design.md` was written.
 
-### Step 5: Update State
+Validate that `design.md` is complete, covers every AC-N.N and NFR-N from requirements.md, and its
+`requirements_sha` equals `approvedRequirementsSha`. A mismatch means requirements changed after approval:
+stop and require a fresh explicit requirements approval. Do not approve `design.md`; it is newly generated
+output and must be reviewed before `/spec-drive:tasks` records its approval.
+
+### Step 6: Update State
 
 After the architect agent completes successfully:
 
@@ -101,7 +133,7 @@ After the architect agent completes successfully:
    - Set `awaitingApproval` to `true`
 3. Write the updated state back to `{basePath}/.spec-drive-state.json`
 
-### Step 6: Handle Mode
+### Step 7: Handle Mode
 
 Check the `mode` field from the state:
 

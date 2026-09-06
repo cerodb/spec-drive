@@ -87,6 +87,37 @@ for cmd in "${COMMANDS[@]}"; do
   fi
 done
 
+echo "-- Checking artifact approval and generation contracts..."
+if cmp -s commands/tasks.md commands/tasks-cmd.md; then
+  ok "tasks.md and tasks-cmd.md are byte-equivalent"
+else
+  fail "tasks.md and tasks-cmd.md must remain byte-equivalent"
+fi
+
+for TASKS_COMMAND in commands/tasks.md commands/tasks-cmd.md; do
+  assert_contains "$TASKS_COMMAND" '"op": "approve"' "$TASKS_COMMAND invokes kernel approve"
+  assert_contains "$TASKS_COMMAND" '"op": "preflight"' "$TASKS_COMMAND invokes kernel preflight"
+  assert_contains "$TASKS_COMMAND" 'expectedSha256' "$TASKS_COMMAND binds approval to expected SHA-256"
+  assert_contains "$TASKS_COMMAND" 'approvalEvidence' "$TASKS_COMMAND requires explicit approval evidence"
+  assert_contains "$TASKS_COMMAND" 'Auto mode never approves generated artifacts' "$TASKS_COMMAND does not autoapprove generated tasks"
+done
+
+assert_contains commands/design.md '"op": "approve"' "design command invokes kernel approve for requirements"
+assert_contains commands/design.md 'approvedRequirementsSha' "design command captures approved requirements SHA-256"
+assert_contains commands/design.md 'Do not approve `design.md`' "design command leaves generated output unapproved"
+assert_contains commands/refactor.md 'Leave `approvals` untouched' "refactor invalidates artifacts by preserving approved hashes"
+assert_contains commands/refactor.md 'Preserve `budgets`' "refactor preserves budget ledger"
+assert_contains commands/refactor.md 'every entry in `attempts`' "refactor preserves attempt history"
+
+assert_contains agents/task-planner.md '\*\*Timeout\*\*: 30' "task planner emits integer Timeout seconds"
+assert_not_contains agents/task-planner.md '\*\*Timeout\*\*: `30s`' "task planner does not emit unit-suffixed Timeout"
+assert_contains agents/task-planner.md '\- \[ \] V1 \[VERIFY\]' "task planner uses canonical V# checkpoint IDs"
+assert_contains agents/task-planner.md 'Every AC-N\.N and NFR-N' "task planner requires AC and NFR task coverage"
+assert_contains templates/tasks.md 'requirements_sha:' "tasks template captures approved requirements hash"
+assert_contains templates/tasks.md 'design_sha:' "tasks template captures approved design hash"
+assert_contains templates/tasks.md '\*\*Timeout\*\*: 120' "tasks template demonstrates integer Timeout"
+assert_contains skills/spec-workflow/references/phase-checklists.md 'execution-kernel `preflight` returns `ok: true`' "execution checklist requires kernel preflight"
+
 echo "-- Checking list command completeness..."
 LIST_FILE="commands/list.md"
 if [ -f "$LIST_FILE" ]; then

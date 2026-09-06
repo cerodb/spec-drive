@@ -354,6 +354,29 @@ approve_all() {
   done
 }
 
+approve_artifact() {
+  local dir="$1"
+  local artifact="$2"
+  local evidence="$3"
+  local sha input out err
+  sha="$(sha_file "$dir/spec/$artifact.md")"
+  input="$dir/approve-$artifact.json"
+  out="$dir/approve-$artifact.out"
+  err="$dir/approve-$artifact.err"
+  node -e '
+    const fs = require("fs");
+    fs.writeFileSync(process.argv[1], JSON.stringify({
+      op: "approve",
+      specDir: process.argv[2],
+      artifact: process.argv[3],
+      expectedSha256: process.argv[4],
+      approvalEvidence: process.argv[5]
+    }));
+  ' "$input" "$dir/spec" "$artifact" "$sha" "$evidence"
+  kernel_json "$input" "$out" "$err" || fail "approve $artifact failed: $(cat "$err")"
+  assert_json_ok "$out"
+}
+
 run_preflight() {
   local dir="$1"
   local input="$dir/preflight.json"
@@ -625,6 +648,35 @@ expect_contract_preflight_error() {
 contracts_poc() {
   rm -rf "$TMP_ROOT"
   mkdir -p "$TMP_ROOT"
+
+  # Canonical generation contract: each downstream artifact captures the digest returned by explicit
+  # upstream approval; generated tasks remain blocked until their own explicit approval and preflight.
+  local generated="$TMP_ROOT/contracts-generated-path"
+  write_fixture "$generated"
+  approve_artifact "$generated" "requirements" "requirements reviewed for task generation"
+  local approved_requirements_sha approved_design_sha
+  approved_requirements_sha="$(json_get "$generated/approve-requirements.out" "sha256")"
+  grep -Fq "requirements_sha: \"$approved_requirements_sha\"" "$generated/spec/design.md" \
+    || fail "generated design did not capture approved requirements SHA-256"
+  approve_artifact "$generated" "design" "design reviewed for task generation"
+  approved_design_sha="$(json_get "$generated/approve-design.out" "sha256")"
+  grep -Fq "requirements_sha: \"$approved_requirements_sha\"" "$generated/spec/tasks.md" \
+    || fail "generated tasks did not capture approved requirements SHA-256"
+  grep -Fq "design_sha: \"$approved_design_sha\"" "$generated/spec/tasks.md" \
+    || fail "generated tasks did not capture approved design SHA-256"
+  if run_preflight "$generated"; then
+    fail "generated tasks passed preflight without explicit tasks approval"
+  fi
+  assert_json_error_contains "$generated/preflight.out" "missing explicit approval evidence for tasks"
+  approve_artifact "$generated" "tasks" "generated task plan reviewed for execution"
+  run_preflight "$generated" || fail "canonical generated plan failed preflight: $(cat "$generated/preflight.err")"
+  assert_json_ok "$generated/preflight.out"
+
+  printf '\nDesign mutation after approval.\n' >> "$generated/spec/design.md"
+  if run_preflight "$generated"; then
+    fail "mutated design passed with stale approval"
+  fi
+  assert_json_error_contains "$generated/preflight.out" "design hash is stale"
 
   local parser="$TMP_ROOT/contracts-parser"
   write_contract_fixture "$parser"

@@ -125,7 +125,7 @@ Every task MUST follow this format:
   - **Cwd**: <repoRoot or explicit subpath>
   - **Done when**: Observable success condition
   - **Verify**: `shell command that proves it works` (exit 0 on success)
-  - **Timeout**: `30s`
+  - **Timeout**: 30
   - **Commit**: `type(scope): concise message`
 ```
 
@@ -260,8 +260,8 @@ A non-`[P]` task or `[VERIFY]` task ends the parallel batch.
 
 ### Step 7: Validate coverage
 
-Every AC-N.N from `requirements.md` must appear in at least one task `Traces` field.
-Emit a `## Coverage Matrix` mapping every AC to one or more task IDs.
+Every AC-N.N and NFR-N from `requirements.md` must appear in at least one task `Traces` field.
+Emit a `## Coverage Matrix` mapping every AC and NFR to one or more task IDs.
 
 If any AC remains unmapped, list it under `## Unresolved Gaps`.
 
@@ -273,7 +273,10 @@ Write `basePath/tasks.md` with this structure:
 ---
 spec: "<spec-name>"
 phase: tasks
+status: "complete"
 created: "<ISO-8601>"
+requirements_sha: "<approved SHA-256 supplied by the caller>"
+design_sha: "<approved SHA-256 supplied by the caller>"
 repoRoot: "<repo root relative to or above basePath>"
 shell: "bash"
 ---
@@ -286,7 +289,7 @@ shell: "bash"
 - [ ] 1.1 First task...
 - [ ] 1.2 [P] Parallel task...
 - [ ] 1.3 [P] Another parallel task...
-- [ ] 1.4 V1 [VERIFY] Checkpoint: ...
+- [ ] V1 [VERIFY] Checkpoint: ...
 
 ## Phase 2: Refactor / Harden
 ...
@@ -309,7 +312,13 @@ shell: "bash"
 <!-- only when needed -->
 ```
 
-Task numbering: `<phase>.<sequence>` for regular tasks. Checkpoints use the next task number plus `V#` marker, e.g. `1.4 V1 [VERIFY]`.
+Task numbering: `<phase>.<sequence>` for regular tasks. Checkpoints use a unique `V#` task ID, e.g.
+`- [ ] V1 [VERIFY] Checkpoint: POC contract`. Do not prefix a checkpoint with a second numeric ID.
+
+The execution kernel accepts `Timeout` only as positive integer seconds. Do not emit units (`30s`),
+fractions, zero, or shell timeout wrappers in that field. Every regular and checkpoint task must include all
+required fields: `Do`, `Files`, `Traces`, `Cwd`, `Done when`, `Verify`, `Timeout`, and `Commit`; `model` is
+optional. For checkpoints, set `Files: none` and `Commit: none`.
 
 All `Verify` commands run from `repoRoot` unless the task sets a narrower `**Cwd**`.
 

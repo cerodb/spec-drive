@@ -48,8 +48,10 @@ Summarize the learnings you will address:
 
 Read `.spec-drive-state.json`. Extract:
 - `phase` — current phase
-- `requirementsSha` — SHA of requirements.md when tasks.md was last generated (may be absent)
-- `designSha` — SHA of design.md when tasks.md was last generated (may be absent)
+- `approvals.requirements.sha256`, `approvals.design.sha256`, and `approvals.tasks.sha256` — canonical
+  explicitly approved artifact digests (any may be absent)
+- `requirementsSha` and `designSha` — legacy diagnostic fields only; never treat them as approvals
+- `budgets`, `attempts`, and `taskStates` — execution ledger data that refactor must preserve byte-for-value
 
 Check phase validity against `skills/spec-workflow/references/phase-transitions.md`.
 
@@ -62,24 +64,29 @@ Complete research and generate requirements first.
 ```
 Stop here.
 
-### 4. Detect staleness via requirementsSha and designSha
+### 4. Detect staleness via approved SHA-256 values
 
-Compute current SHAs of the existing artifacts:
+Compute the SHA-256 of the exact current bytes without using Git object IDs:
 ```bash
-git hash-object "{basePath}/requirements.md" 2>/dev/null || sha256sum "{basePath}/requirements.md" 2>/dev/null | cut -c1-64
-git hash-object "{basePath}/design.md" 2>/dev/null || sha256sum "{basePath}/design.md" 2>/dev/null | cut -c1-64
+node -e 'const fs=require("fs"),c=require("crypto");process.stdout.write(c.createHash("sha256").update(fs.readFileSync(process.argv[1])).digest("hex"))' "{basePath}/requirements.md"
+node -e 'const fs=require("fs"),c=require("crypto");process.stdout.write(c.createHash("sha256").update(fs.readFileSync(process.argv[1])).digest("hex"))' "{basePath}/design.md"
+node -e 'const fs=require("fs"),c=require("crypto");process.stdout.write(c.createHash("sha256").update(fs.readFileSync(process.argv[1])).digest("hex"))' "{basePath}/tasks.md"
 ```
 
-Compare against stored values in `.spec-drive-state.json`:
-- If `requirementsSha` is set and differs from current SHA → requirements.md has changed since tasks were generated → mark as **stale**
-- If `designSha` is set and differs from current SHA → design.md has changed since tasks were generated → mark as **stale**
-- If either SHA field is absent → cannot determine staleness → treat as **unknown** (proceed with refactor anyway)
+Compare each digest with its matching `approvals.<artifact>.sha256` and require non-empty approval evidence:
+- matching digest plus evidence → **approved**
+- approval exists but digest differs → **stale**
+- approval or evidence is absent → **unapproved**
+
+`requirementsSha` and `designSha`, when present, may be reported as legacy context but cannot make an
+artifact approved. Never call kernel `approve` during refactor and never manufacture approval evidence.
 
 Report staleness:
 ```
 Staleness check:
-  requirements.md: [stale | unchanged | unknown]
-  design.md:       [stale | unchanged | unknown]
+  requirements.md: [approved | stale | unapproved]
+  design.md:       [approved | stale | unapproved]
+  tasks.md:        [approved | stale | unapproved]
 ```
 
 ### 5. Update requirements.md
@@ -157,19 +164,24 @@ Refactor initiated after execution learnings revealed:
 <brief explanation of why these changes were necessary based on the learnings>
 ```
 
-### 9. Update .spec-drive-state.json
+### 9. Invalidate downstream artifacts without resetting execution history
 
-Recompute SHAs for the updated artifacts and write back to state:
-```bash
-git hash-object "{basePath}/requirements.md" 2>/dev/null || sha256sum "{basePath}/requirements.md" | cut -c1-64
-git hash-object "{basePath}/design.md" 2>/dev/null || sha256sum "{basePath}/design.md" | cut -c1-64
-```
+Artifact invalidation is hash-based. Leave `approvals` untouched after edits so an approval continues to name
+only the exact bytes the user reviewed. Do not replace approval SHA-256 values, approval evidence, or approval
+timestamps, and do not update legacy `requirementsSha` / `designSha` fields to imply freshness.
 
-Update `.spec-drive-state.json`:
-- `requirementsSha` → new SHA of requirements.md
-- `designSha` → new SHA of design.md
+Set `awaitingApproval: true`. Move `phase` to the earliest changed artifact so the normal commands can capture
+fresh explicit approvals in order:
+- requirements changed → `phase: "requirements"`
+- only design changed → `phase: "design"`
+- only tasks changed → `phase: "tasks"`
 
-If phase was "execution" and tasks.md changed, set phase back to "tasks" so `/spec-drive:implement` re-validates the plan before continuing.
+If nothing changed, preserve the phase. Preserve `budgets`, every entry in `attempts`, `taskStates`, task
+attempt counters, `runId`, and recovery evidence exactly. Never initialize a new execution ledger, reopen an
+accepted task, delete an attempt/worktree, or reset budget usage. The next `preflight` must fail on the first
+stale or missing approval until the user explicitly approves the regenerated artifacts in dependency order.
+
+Update only `phase`, `awaitingApproval`, and refactor metadata in `.spec-drive-state.json`.
 
 Use atomic write pattern (write to temp, then rename):
 ```bash
