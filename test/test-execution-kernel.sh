@@ -32,8 +32,13 @@ kernel_json() {
   local input="$1"
   local stdout="$2"
   local stderr="$3"
+  # These fixtures exercise the shipped Codex subprocess contract. Select it
+  # explicitly so CI does not depend on the coordinator's environment.
+  local fixture_config="$TMP_ROOT/.routing-config"
+  mkdir -p "$fixture_config/spec-drive"
+  printf '{"cli":"codex"}\n' > "$fixture_config/spec-drive/config.json"
   set +e
-  node "$KERNEL" < "$input" > "$stdout" 2> "$stderr"
+  XDG_CONFIG_HOME="$fixture_config" node "$KERNEL" < "$input" > "$stdout" 2> "$stderr"
   local status=$?
   set -e
   return "$status"
