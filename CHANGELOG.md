@@ -1,5 +1,14 @@
 # Changelog
 
+## v2.1.0 (unreleased)
+
+- Route existing pre-kernel specs to a shared sequential legacy conductor in
+  commands, session context and stop hooks. Preserve ongoing tasks and history
+  without a global downgrade or automatic migration.
+- Keep 2.0 kernel projects on the kernel; reject corrupt/unknown states and direct
+  kernel access to legacy records without rewriting them.
+- Add representative routing, hook and state-preservation coverage.
+
 ## v2.0.0 (unreleased)
 
 - Introduce a persistent execution ledger keyed by task and attempt IDs, shared across CLI adapters.

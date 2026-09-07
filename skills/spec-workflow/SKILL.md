@@ -1,5 +1,13 @@
 # Spec Workflow
 
+## Existing projects
+
+Before applying the kernel rules below to an existing project, resolve its
+runtime with `hooks/scripts/runtime-route.mjs` as described in the command.
+Pre-kernel projects use the shared [legacy conductor](../../docs/legacy-mode-en.md)
+for the requested operation. Keep their partial work and historical completion.
+Kernel errors never select legacy mode. New projects use the kernel.
+
 Spec-Drive follows a strict document chain where each phase produces an artifact that feeds the next. Agents read predecessor files directly — no template variables or context injection between phases.
 
 ## Phase Order

@@ -1,5 +1,12 @@
 # Upgrading to Spec-Drive 2.0
 
+**2.1 compatibility update:** existing pre-kernel projects now select the shared
+[legacy conductor](legacy-mode-en.md) automatically per project. Use the usual
+`/spec-drive:status` and `/spec-drive:implement` commands to continue partial work
+without reinstalling 1.x. Existing kernel projects continue through the kernel.
+The following describes the original 2.0 execution contract and remains the
+guidance for new kernel specs; there is still no automatic state migration.
+
 2.0.0 is prepared as an unpublished candidate. It changes execution state and acceptance
 contracts. The planning sequence remains idea, research, requirements, design and tasks.
 

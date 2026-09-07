@@ -21,6 +21,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
+import { resolveRuntime } from "./runtime-route.mjs";
 
 const STATE_FILE = ".spec-drive-state.json";
 // Request-local snapshots are never persisted as part of the public ledger.
@@ -2272,6 +2273,16 @@ function pause(request) {
 
 try {
   const request = parseJsonStdin();
+  if (typeof request.specDir === "string" && existsSync(statePath(request.specDir))) {
+    let route;
+    try { route = resolveRuntime(request.specDir); }
+    catch (error) { throw artifactError(error.message, { artifact: STATE_FILE }); }
+    if (route.runtime === "legacy") {
+      throw artifactError("legacy index-only or pre-kernel state: use /spec-drive:implement in legacy mode; original bytes were preserved", {
+        artifact: STATE_FILE, commandPath: route.commandPath,
+      });
+    }
+  }
   switch (request.op) {
     case "approve":
       respond(approve(request));

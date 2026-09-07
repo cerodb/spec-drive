@@ -73,8 +73,14 @@ worktree. A failed target verification reverses only the exact owned promotion p
 checking its bytes, HEAD and index. Timeouts, missing executables and candidate mutations require
 explicit recovery. Repeating acceptance does not rerun a failed verification indefinitely.
 
-The next version is **2.0.0**, currently an unpublished candidate. See the
-[upgrade notes](docs/upgrading-2.0-en.md) for compatibility and checkpoint guidance.
+The next version is **2.1.0**, currently an unpublished candidate. Existing
+pre-kernel projects automatically use the [legacy conductor](docs/legacy-mode-en.md)
+to continue unfinished tasks in their original format, including partial work.
+New projects and existing 2.0 kernel states use the kernel. Routing is per project
+and read-only; no global version switch or automatic migration is needed.
+Legacy completion retains its historical meaning, without kernel acceptance
+guarantees. Corrupt state and kernel errors require attention, never a fallback.
+See the [upgrade notes](docs/upgrading-2.0-en.md) for kernel checkpoint guidance.
 
 ## Adaptive Model Router
 
@@ -138,7 +144,7 @@ Prerequisites on macOS: Node.js >=18, `bash`, `git`, and `jq`. Install `jq` via 
 
 ## Release Notes
 
-- Current release: `v2.0.0` (unpublished candidate)
+- Current release: `v2.1.0` (unpublished candidate)
 - Last published release: `v1.4.1` (2026-08-18)
 - `v1.4.1` is test-harness maintenance with no runtime change over `v1.4.0`: macOS path assertions were comparing raw `mktemp -d` output against symlink-resolved resolver output, and a new suite covers a workspace root reached through a symlink.
 - `v1.4.0` adds scoped per-key configuration, atomic project scaffolding, canonical project artifact destinations, and expanded portability/security regression coverage.

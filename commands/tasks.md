@@ -6,6 +6,18 @@ allowed-tools: [Read, Write, Bash, Glob, Agent]
 
 # /spec-drive:tasks
 
+## Select the project runtime first
+
+Before the remaining steps or any state write, locate the existing spec using
+the discovery rules below. Send `{"specDir":"<resolved spec directory>"}` on
+stdin to `node "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/runtime-route.mjs"` (resolve
+the plugin root from this command file if the environment is absent).
+If routing fails, stop with its diagnostic and preserve the state.
+If `runtime=legacy`, read the returned `commandPath` and follow its **tasks**
+section instead of the remaining v2 instructions. This branch is the explicit
+exception to kernel-only rules below. If `runtime=kernel-v2`, continue below;
+a later kernel error must never cause a fallback to legacy.
+
 Generate a phased implementation task plan from the technical design by delegating to the task-planner agent.
 
 ## When Invoked

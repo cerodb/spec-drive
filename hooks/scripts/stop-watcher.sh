@@ -150,6 +150,20 @@ if [ "$AWAITING" = "true" ]; then
     exit 0
 fi
 
+# Legacy continuation is prompt-driven and read-only at the hook boundary.
+if ! ROUTE=$(jq -n --arg specDir "$SPEC_PATH" '{specDir:$specDir}' | node "$SCRIPT_DIR/runtime-route.mjs"); then
+    echo "Spec-Drive runtime selection requires attention: $ROUTE"
+    exit 0
+fi
+if [ "$(printf '%s' "$ROUTE" | jq -r '.runtime')" = "legacy" ]; then
+    if [ "$PHASE" = "execution" ] || [ "$PHASE" = "ongoing" ]; then
+        echo "Continue spec: $NAME (Legacy mode)"
+        echo "Read $(printf '%s' "$ROUTE" | jq -r '.commandPath') and run /spec-drive:implement."
+        echo "Reconcile the existing cursor and partial work; confirm any previous executor has stopped before continuing."
+    fi
+    exit 0
+fi
+
 # --- Execution phase: ask the kernel to resume and describe its ledger ---
 if [ "$PHASE" = "execution" ]; then
     # A pause only suppresses auto-resume while its ledger snapshot is current.

@@ -165,7 +165,7 @@ else
   fail "stop-watcher did not report ambiguous active project selection"
 fi
 
-echo "-- Legacy execution state refuses ordinal fallback..."
+echo "-- Legacy execution state selects compatibility conductor..."
 rm -rf "$TMP_HOME/spec-drive-projects/P101"
 cat >"$TMP_HOME/spec-drive-projects/P100/spec/.spec-drive-state.json" <<'EOF'
 {"name":"P100","phase":"execution","awaitingApproval":false,"mode":"normal","taskIndex":0,"totalTasks":1,"taskIteration":1,"maxTaskIterations":5,"globalIteration":"abc","maxGlobalIterations":"xyz"}
@@ -174,10 +174,10 @@ NUMERIC_OUTPUT="$(HOME="$TMP_HOME" XDG_CONFIG_HOME="$TMP_HOME/.config" bash hook
 {"cwd":"/tmp"}
 EOF
 )"
-if echo "$NUMERIC_OUTPUT" | grep -q "cannot resume P100"; then
-  ok "stop-watcher refuses legacy index fallback"
+if echo "$NUMERIC_OUTPUT" | grep -q "P100 (Legacy mode)" && echo "$NUMERIC_OUTPUT" | grep -q "legacy-mode-en.md"; then
+  ok "stop-watcher routes legacy state without interpreting its counters"
 else
-  fail "stop-watcher attempted legacy ordinal continuation"
+  fail "stop-watcher did not select the legacy conductor"
 fi
 
 echo "-- Workspace config precedence..."
@@ -197,7 +197,7 @@ WORKSPACE_OUTPUT="$(HOME="$TMP_HOME" XDG_CONFIG_HOME="$TMP_HOME/.config" bash ho
 {"cwd":"$WORKSPACE/repo"}
 EOF
 )"
-if echo "$WORKSPACE_OUTPUT" | grep -q "cannot resume P200"; then
+if echo "$WORKSPACE_OUTPUT" | grep -q "P200 (Legacy mode)"; then
   ok "workspace config resolves relative projectRoot from git root"
 else
   fail "workspace config did not resolve relative projectRoot from git root"
@@ -216,7 +216,7 @@ XDG_OUTPUT="$(HOME="$TMP_HOME" XDG_CONFIG_HOME="$TMP_HOME/.config" bash hooks/sc
 {"cwd":"$WORKSPACE/repo"}
 EOF
 )"
-if echo "$XDG_OUTPUT" | grep -q "cannot resume P201"; then
+if echo "$XDG_OUTPUT" | grep -q "P201 (Legacy mode)"; then
   ok "xdg config is used when workspace config is absent"
 else
   fail "xdg config was not used when workspace config is absent"
@@ -235,7 +235,9 @@ cat >"$PAUSE_HOME/bin/node" <<'EOF'
 #!/bin/bash
 REQUEST="$(cat)"
 OP="$(printf '%s' "$REQUEST" | jq -r '.op // empty')"
-if [ "$OP" = "resume" ]; then
+if [[ "$1" = */runtime-route.mjs ]]; then
+  printf '%s\n' '{"ok":true,"runtime":"kernel-v2"}'
+elif [ "$OP" = "resume" ]; then
   printf '%s\n' '{"ok":true}'
 elif [ "$OP" = "status" ]; then
   SPEC_DIR="$(printf '%s' "$REQUEST" | jq -r '.specDir')"
@@ -257,6 +259,7 @@ chmod +x "$PAUSE_HOME/bin/node"
 cat >"$PAUSE_PROJECT/spec/.spec-drive-state.json" <<'EOF'
 {
   "name": "P202",
+  "schemaVersion": 2,
   "phase": "execution",
   "awaitingApproval": false,
   "mode": "normal",

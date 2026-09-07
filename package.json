@@ -1,6 +1,6 @@
 {
   "name": "spec-drive",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Spec-driven development: idea -> research -> requirements -> design -> tasks -> autonomous execution with quality gates.",
   "license": "MIT",
   "scripts": {
@@ -10,7 +10,7 @@
     "test:commands": "bash test/test-commands.sh",
     "test:schema": "bash test/test-schema.sh",
     "test:schema-real": "node test/test-schema-real.mjs",
-    "test:release": "node test/test-kernel-release.mjs && node test/test-kernel-markdown.mjs && node test/test-kernel-routing.mjs && node test/test-schema-real.mjs",
+    "test:release": "node test/test-kernel-release.mjs && node test/test-kernel-markdown.mjs && node test/test-kernel-routing.mjs && node test/test-schema-real.mjs && node test/test-legacy-routing.mjs",
     "test:routing": "bash test/test-routing.sh",
     "test:registrar": "bash test/test-registrar.sh",
     "test:cross-cli": "bash test/test-cross-cli.sh",

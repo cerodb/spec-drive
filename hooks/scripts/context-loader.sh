@@ -90,6 +90,18 @@ if ! jq empty "$STATE_FILE" 2>/dev/null; then
     exit 0
 fi
 
+# Select the conductor without interpreting old counters as a kernel ledger.
+if ! ROUTE=$(jq -n --arg specDir "$SPEC_PATH" '{specDir:$specDir}' | node "$SCRIPT_DIR/runtime-route.mjs"); then
+    echo "[spec-drive] Runtime selection requires attention: $ROUTE" >&2
+    exit 0
+fi
+if [ "$(printf '%s' "$ROUTE" | jq -r '.runtime')" = "legacy" ]; then
+    echo "[spec-drive] Legacy mode: $(jq -r '.name' "$STATE_FILE") | Phase: $(jq -r '.phase' "$STATE_FILE")" >&2
+    echo "[spec-drive] Preserve existing tasks and partial work. Read $(printf '%s' "$ROUTE" | jq -r '.commandPath')." >&2
+    echo "[spec-drive] Run /spec-drive:status or /spec-drive:implement to continue with the legacy conductor." >&2
+    exit 0
+fi
+
 # --- Read lifecycle metadata and kernel-owned execution status ---
 NAME=$(jq -r '.name // "unknown"' "$STATE_FILE")
 PHASE=$(jq -r '.phase // "unknown"' "$STATE_FILE")

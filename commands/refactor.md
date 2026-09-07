@@ -6,6 +6,18 @@ allowed-tools: [Read, Write, Edit, Bash, Glob, Grep]
 
 # /spec-drive:refactor
 
+## Select the project runtime first
+
+Before the remaining steps or any state write, locate the existing spec using
+the discovery rules below. Send `{"specDir":"<resolved spec directory>"}` on
+stdin to `node "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/runtime-route.mjs"` (resolve
+the plugin root from this command file if the environment is absent).
+If routing fails, stop with its diagnostic and preserve the state.
+If `runtime=legacy`, read the returned `commandPath` and follow its **refactor**
+section instead of the remaining v2 instructions. This branch is the explicit
+exception to kernel-only rules below. If `runtime=kernel-v2`, continue below;
+a later kernel error must never cause a fallback to legacy.
+
 Refactor spec artifacts after execution learnings reveal design flaws. Updates requirements → design → tasks in sequence, recording all changes in `.progress.md`.
 
 ## Steps
