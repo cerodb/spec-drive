@@ -101,6 +101,15 @@ Handle scaffold exits as follows:
 - Exit `2`: stop and tell the user the destination project already exists; do not delegate Research.
 - Any other non-zero exit: stop, surface the scaffold stderr, and do not delegate Research.
 
+
+
+For every `Agent` or `Task tool` dispatch through Codex, follow the shared Codex adapter's
+`Paso 2 - Traducir delegación a subagente` protocol and have the adapter apply it. Normalize role,
+resolved prompt, absolute `basePath`, stable `unitKey`, and tier; definition delegations default to
+`standard` only when no tier is explicit. Resolve the current candidate through
+`resolve-model.sh <tier> codex` immediately before dispatch. Keep after-delegation state changes
+behind exit success and required artifact validation.
+
 ## Delegate to Researcher
 
 <mandatory>

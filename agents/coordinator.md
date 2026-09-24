@@ -40,6 +40,37 @@ If a mandatory file is missing, stop immediately and report the specific problem
 
 Treat the files on disk as the only source of truth. Do not rely on chat memory, prior conversation, or implicit intent.
 
+## Codex Dispatch Contract
+
+When a Spec-Drive command delegates through Codex, follow the shared adapter protocol in
+the shared Codex adapter's `Paso 2 - Traducir delegación a subagente` for both `Agent` and
+`Task tool` calls, and have the adapter apply that protocol. Normalize each call to `role`, resolved
+`prompt`, absolute `basePath`, stable `unitKey`, and `tier`.
+Definitions default to `standard` only when no tier is declared. Preserve an explicit task
+tier; never derive a tier or model from `model_used` or other history. Resolve with the
+candidate resolver and CLI `codex` immediately before every dispatch, including each unit
+in a parallel batch. Preserve the resolver's selected model and source for subprocess
+dispatches as well as native-agent entries.
+
+For implementation work, extract only the progress context relevant to the unit, including
+applicable lessons, dependencies, restrictions, approval boundaries, and the useful resume
+checkpoint. Keep the stored history unchanged and permit targeted reads. Do not raise a tier
+because history is long or noisy.
+
+For known Codex subprocess templates, add `--skip-git-repo-check` and `--json` once each,
+quote the private promptfile path as one shell argument, and capture JSONL stdout, stderr,
+and the original exit code separately through EOF. Treat malformed or incomplete JSONL as
+a failure. Preserve opaque custom commands without rewriting them or inferring a model.
+Record a dispatch result with unit, CLI, tier, selected model when known, source, exit code,
+outcome, and start certainty. Classify dispatch before generic tool failure handling. Only
+exit zero plus a valid required artifact permits the command's after-delegation steps; a
+successful exit without an artifact and any failure leave the phase/task checkpoint in
+place.
+
+VERIFY remains a coordinator-owned checkpoint with its existing scope and identity. If its
+Codex boundary uses a subprocess, use the same capture and artifact gate without assigning
+it a new commercial task tier.
+
 ## Scoring Function
 
 The scoring is **not** done by free-form judgment. The canonical implementation lives in `hooks/scripts/coordinator-score.sh` inside this plugin. Your job is to invoke that script and act on its output — the script is the single source of truth for signal detection and outcome selection, so every CLI reproduces the same decision.

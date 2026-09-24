@@ -131,9 +131,24 @@ Before dispatching a Regular Task or `[P]` task:
 
 This dirty-file check moved here from the executors so every dispatch mechanism has the same trusted preflight.
 
+#### Prepare task context
+
+Before dispatch, prepare `progressContext` from `{basePath}/.progress.md`: include Original Goal,
+Current Task, Blockers, Next, relevant learnings, completed dependencies, restrictions, approval
+boundaries and verification evidence needed by this task. Keep stored history intact, send only this
+extract, and allow targeted follow-up reads. For parallel batches, prepare a separate extract for each
+task. VERIFY checkpoints receive all evidence required by their declared verification scope.
+
 #### Detect Task Type and Dispatch
 
-Inspect the task description to determine the type.
+Inspect the task description to determine the type. When this command runs through the Codex adapter,
+follow the shared Codex adapter's `Paso 2 - Traducir delegación a subagente` protocol for every
+regular task, parallel unit, and VERIFY subprocess boundary, and have the adapter apply it. Normalize
+each dispatch to role, prompt, basePath, unitKey, and tier; resolve the current Codex selection
+immediately before dispatch. VERIFY keeps its checkpoint identity and session tier, without
+inventing a task tier.
+For the known Codex subprocess template, add `--skip-git-repo-check` and `--json` once
+each, capture JSONL stdout/stderr/exit through EOF, and keep opaque custom commands intact.
 
 #### Resolve Model Tier (pre-dispatch, Regular Tasks only)
 
@@ -142,7 +157,12 @@ Before delegating a Regular Task, resolve its `model:` tier to a concrete dispat
 1. Parse the `model:` field from the task block (e.g. `model: standard`, placed after `Traces:` and
    before `Cwd:`). If the field is absent, treat the tier as empty -- the resolver's inherit fallback
    handles this case.
-2. Run the resolver via the Bash tool as `"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/resolve-model.sh" <tier>`.
+2. Resolve only the explicit tier from the task block. Do not increase the model because the history is
+   long or the environment is noisy.
+3. Run the resolver via the Bash tool as
+   `"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/resolve-model.sh" <tier> codex` when using the
+   Codex adapter. Pass the CLI explicitly so plugin-root detection cannot select another
+   runtime. For other adapters, pass their explicit CLI identifier.
    `CLAUDE_PLUGIN_ROOT` points at this plugin's root. Do NOT use a bare relative path such as
    `hooks/scripts/resolve-model.sh`: the coordinator's working directory is the user's project, not the
    plugin, so a relative path is not found and every task would silently fall back to `inherit`. If
@@ -150,10 +170,10 @@ Before delegating a Regular Task, resolve its `model:` tier to a concrete dispat
    command file (same fallback contract as `agents/coordinator.md`). `<tier>` may be empty for tasks
    with no `model:` field. Capture stdout and parse the three `key=value` lines it always emits:
    - `mechanism=` -- one of `agent`, `subprocess`, `inherit`
-   - `model=` -- concrete model id (set only when `mechanism=agent`)
+   - `model=` -- concrete selected model id when available, including subprocess profiles
    - `cmd=` -- command template with `{promptfile}` placeholder (set only when
      `mechanism=subprocess`; shipped `{MODEL}`/`{CMD}` profile stubs must be overridden before use)
-3. Branch the dispatch on `mechanism`:
+4. Branch the dispatch on `mechanism`:
    - **`mechanism=agent`** -- invoke `spec-drive:executor` via the Agent tool WITH the resolved
      `model` added as a parameter: `Agent(subagent_type: "spec-drive:executor", model: <resolved
      model>, prompt: <executor contract>)`. Same call as the inherit case below, one field added.
@@ -187,7 +207,7 @@ the resolution step above:
   {full task block text}
 
   Progress:
-  {contents of basePath/.progress.md}
+  {progressContext}
   ```
 
 - **`mechanism=subprocess`**:
@@ -205,7 +225,7 @@ the resolution step above:
   {full task block text}
 
   Progress:
-  {contents of basePath/.progress.md}
+  {progressContext}
   SPEC_DRIVE_PROMPT
   Bash: <profile cmd template, {promptfile} substituted with "$promptFile">
   rm -f "$promptFile"
@@ -228,14 +248,18 @@ the resolution step above:
   {full task block text}
 
   Progress:
-  {contents of basePath/.progress.md}
+  {progressContext}
   ```
 
 #### [VERIFY] Task
 
-`[VERIFY]` tasks are NOT routed through `resolve-model.sh` (MVP scope) -- they always run on the
-session model, regardless of any `model:` field on the task block. Delegate to the
-`spec-drive:qa-engineer` agent via Task tool:
+`[VERIFY]` tasks remain coordinator-owned quality checkpoints and are not converted into
+regular implementation tasks. Keep the session tier and do not invent a commercial task
+tier. Before a VERIFY delegation, the Codex adapter still resolves the session tier (or
+empty tier when unavailable) with explicit CLI `codex` to record the current selection and
+source. Do not use that lookup to change the checkpoint's session model. If VERIFY crosses
+a subprocess boundary, use Paso 2 capture and artifact rules from the adapter. Delegate to
+the `spec-drive:qa-engineer` agent via Task tool:
 
 ```
 Task tool: spec-drive:qa-engineer
@@ -248,7 +272,7 @@ Task Block:
 {full task block text}
 
 Progress:
-{contents of basePath/.progress.md}
+{progressContext}
 ```
 
 #### [P] Parallel Batch
@@ -258,6 +282,9 @@ When the current task has a `[P]` marker:
 1. Collect all consecutive `[P]` tasks starting from the current taskIndex
 2. Determine batch size (respect `maxConcurrency` from config, default: 2)
 3. For each task in the batch, delegate to `spec-drive:executor` via Task tool with an isolated `progressFile`:
+   - prepare that unit's `progressContext`
+   - resolve that unit's explicit tier again with the active CLI before dispatch
+   - keep the task's explicit tier unchanged; never infer it from `model_used`
    ```
    Agent: spec-drive:executor
 
@@ -270,7 +297,7 @@ When the current task has a `[P]` marker:
    {task block for this specific task}
 
    Progress:
-   {contents of basePath/.progress.md}
+   {progressContext}
    ```
 4. Update state with `parallelGroup`:
    ```json
@@ -303,35 +330,41 @@ After the delegated executor completes, parse the final decisive line from its r
 The coordinator must perform the trusted post-processing. Do not trust the executor's success signal alone.
 
 1. Re-run the task's exact Verify command in the trusted coordinator context. This is the authoritative check before any commit.
-2. If Verify fails, treat the task as failed: append the failure to `.progress.md`, increment iteration counters, and retry/stop per limits below. Do not commit.
-3. Stage ONLY the task's declared `Files` paths:
+2. For definition commands, require exit code zero and each declared output artifact to
+   exist and pass its phase checklist before running any "after delegation" state update.
+   For implementation/VERIFY dispatches, require the exact success signal and valid required
+   artifact(s). A zero exit without its artifact is a failed dispatch: retain phase, task
+   index, progress checkpoint, and attempts as appropriate; do not advance or commit.
+3. If Verify fails, treat the task as failed: append the failure to `.progress.md`, increment iteration counters, and retry/stop per limits below. Do not commit.
+4. Stage ONLY the task's declared `Files` paths:
    ```bash
    git add <files from Files field>
    ```
-4. Commit implementation changes with the exact message from the task's `Commit` line:
+5. Commit implementation changes with the exact message from the task's `Commit` line:
    ```bash
    git commit -m "<exact Commit message>"
    ```
    If the task explicitly says "only if fixes needed" and no files changed, skip only this implementation commit and continue to tracking.
-5. Mark the task as `[x]` in `{basePath}/tasks.md`.
-6. Append `model_used: <tier-or-mechanism>` to the completed task's block, where the value reflects the tier/mechanism that actually executed the implementation.
-7. Update the progress file (`progressFile` if provided, else `{basePath}/.progress.md`):
+6. Mark the task as `[x]` in `{basePath}/tasks.md`.
+7. Append `model_used: <tier-or-mechanism>` to the completed task's block, where the value reflects the tier/mechanism that actually executed the implementation. This is historical metadata only; it never pins future dispatches.
+8. Update the progress file (`progressFile` if provided, else `{basePath}/.progress.md`):
    - add task to Completed Tasks
-   - set Current Task to "Awaiting next task"
-   - append concrete learnings from the executor output when useful
-8. Commit tracking state separately:
+   - set Current Task to "Awaiting next task" with the resume point, verification status, and any pending items
+   - set Next to the next resume point, verification note, and pending items
+   - append only actionable, non-duplicated learnings from the executor output when useful
+9. Commit tracking state separately:
    ```bash
    git add {basePath}/tasks.md {basePath}/<progressFile or .progress.md>
    git commit -m "chore(spec-drive): update progress for task <task-id>"
    ```
-9. Advance `taskIndex` by 1 (or by batch size for parallel)
-10. Reset `taskIteration` to 1
-11. Increment `globalIteration` by 1
-12. Record success in `taskResults`:
+10. Advance `taskIndex` by 1 (or by batch size for parallel)
+11. Reset `taskIteration` to 1
+12. Increment `globalIteration` by 1
+13. Record success in `taskResults`:
    ```json
    { "<taskIndex>": { "status": "success" } }
    ```
-13. Write updated state to `.spec-drive-state.json`
+14. Write updated state to `.spec-drive-state.json`
 14. Loop back to Step 5 for the next task
 
 #### On TASK_BLOCKED / Failure (or VERIFICATION_FAIL)
@@ -343,6 +376,9 @@ The coordinator must perform the trusted post-processing. Do not trust the execu
    { "<taskIndex>": { "status": "failed", "error": "<failure details>" } }
    ```
 4. Append failure details to `{basePath}/.progress.md` Learnings section
+   only when they add an actionable lesson; do not duplicate a known failed approach.
+   Update Current Task and Next with partial work, the last Verify result and the
+   specific next action so a later session can resume without replaying the history.
 
 **Check iteration limits:**
 

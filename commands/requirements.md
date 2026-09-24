@@ -126,6 +126,15 @@ This command parses the coordinator's output and acts on it. Four outcomes matte
    ```
    Do NOT delegate to the product-manager.
 
+
+
+For every `Agent` or `Task tool` dispatch through Codex, follow the shared Codex adapter's
+`Paso 2 - Traducir delegación a subagente` protocol and have the adapter apply it. Normalize role,
+resolved prompt, absolute `basePath`, stable `unitKey`, and tier; definition delegations default to
+`standard` only when no tier is explicit. Resolve the current candidate through
+`resolve-model.sh <tier> codex` immediately before dispatch. Keep after-delegation state changes
+behind exit success and required artifact validation.
+
 ### Step 5: Delegate to Product-Manager Agent
 
 All checklist items passed. Delegate to the `spec-drive:product-manager` agent via the Agent tool:
