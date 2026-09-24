@@ -150,6 +150,37 @@ inventing a task tier.
 For the known Codex subprocess template, add `--skip-git-repo-check` and `--json` once
 each, capture JSONL stdout/stderr/exit through EOF, and keep opaque custom commands intact.
 
+Before generic failure handling, construct a `DispatchResult` with `unitKey`, `cli`, `tier`,
+`selectedModel` when known, `source`, original `exitCode`, `outcome` (`success`,
+`unavailable_before_work`, or `other_failure`), start certainty (`yes`, `no`, or `unknown`),
+and optional adapter version/signature/sanitized cause. A rejection is recoverable only when
+the Codex subprocess satisfies the exact adapter signature
+`codex-0.156.1-chatgpt-model-rejection-v1`: exit 1; complete parseable JSONL in the documented
+event order; selected ID matches the nested status-400 `invalid_request_error` in both
+`error.message` and terminal `turn.failed.error.message`; and any metadata warning exactly
+matches the captured warning apart from that ID. `turn.started`, metadata alone, HTTP status,
+exit code, or missing file changes do not establish work or rejection. Auth/network errors,
+truncation, malformed JSONL, unknown version/shape, different ID, work events, or ambiguity
+are `other_failure`; work events mean `started=yes`, uncertain start means `unknown`. Native
+Agent, Coda, and opaque commands use ordinary failure handling. Sanitize diagnostics to a
+fixed cause and validated selected ID.
+
+For a confirmed initial rejection only, preserve the task cursor, checks, iteration counters,
+progress, and historical model metadata. Re-resolve the same CLI and explicit tier. If it
+selects a different configured ID, persist a one-retry reservation and dispatch once. If there
+is no different ID, persist `awaiting_choice` before asking one model choice. A missing answer
+leaves that episode pending without another query. An invalid answer or failed write/lock/
+concurrency check blocks without dispatch. A valid choice updates only
+`profiles[cli][tier].model`; preserve unrelated JSON values and the existing mechanism, mode,
+and permissions. Require a regular file, hold the existing lock, verify the file still matches
+the bytes read, write a temporary sibling, and replace atomically. If no compatible scoped
+entry exists, create only the model partial over a compatible base; an opaque or incompatible
+command blocks for manual repair. Re-resolve and verify the same CLI, tier, mechanism, command,
+and provider before reserving the retry. Any change blocks. Reuse the same role, prompt bytes,
+and unit key. A retry that starts work follows normal failure accounting; a second confirmed
+rejection blocks without another query or dispatch. Success still requires the ordinary valid
+artifact gate. Never add a dispatcher executable or infer a fallback model/provider.
+
 #### Resolve Model Tier (pre-dispatch, Regular Tasks only)
 
 Before delegating a Regular Task, resolve its `model:` tier to a concrete dispatch mechanism:

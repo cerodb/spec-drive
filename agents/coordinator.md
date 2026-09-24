@@ -67,6 +67,51 @@ exit zero plus a valid required artifact permits the command's after-delegation 
 successful exit without an artifact and any failure leave the phase/task checkpoint in
 place.
 
+Use this `DispatchResult` shape for classification, keeping the process exit code separate
+from the derived outcome:
+
+```typescript
+type DispatchResult = {
+  unitKey: string;
+  cli: string;
+  tier: string;
+  selectedModel?: string;
+  source: string;
+  exitCode?: number;
+  outcome: "success" | "unavailable_before_work" | "other_failure";
+  started: "yes" | "no" | "unknown";
+  evidence?: { adapterVersion: string; signature: string; cause: string };
+};
+```
+
+Only Codex subprocess output can establish the captured signature
+`codex-0.156.1-chatgpt-model-rejection-v1`: exit 1, complete valid JSONL, and exactly the
+permitted `thread.started`, optional matching metadata warning, `turn.started`, `error`,
+terminal `turn.failed` sequence. Parse the nested JSON in both error messages and require the
+same object with status 400, `invalid_request_error`, and the unsupported-model sentence for
+the exact `selectedModel`. The warning, if present, must match the recorded 0.156.1 capture
+apart from that ID. A `turn.started` event or metadata warning by itself proves neither work
+nor rejection. Authentication/network failures, truncation, malformed output, unknown version
+or event shape, a different ID, work events, and ambiguous evidence classify as
+`other_failure`; observed work sets `started=yes`, uncertainty sets `started=unknown`. Native
+Agent, Coda, and opaque commands have no matching evidence and use ordinary failure handling.
+Emit only a fixed sanitized cause and validated model ID in diagnostics, never raw messages,
+stderr, or prompt content.
+
+On `unavailable_before_work` only, begin or resume a persisted recovery episode keyed by the
+same unit. Preserve task cursor, checkmarks, counters, progress, and history on initial reject.
+Re-resolve the same CLI and tier. A configured different model reserves the one allowed retry;
+otherwise atomically persist `awaiting_choice` and ask once. No response remains pending without
+another question. Invalid choice or write/lock/conflict failure blocks without dispatch. For a
+valid explicit choice, update only `profiles[cli][tier].model`, preserving every other value
+and the effective mechanism. Require a regular file, preserve permissions, lock and compare
+the bytes read, write a sibling temporary file, then atomically replace. Re-resolve and require
+the same CLI, tier, mechanism, command, and provider; any change blocks. Persist the retry
+reservation before invoking the same role with the same prompt and unit. A second rejection
+blocks with no further query or invocation. A retry that starts work follows the ordinary
+failure path and preserves its effects; success still passes the regular artifact gate. Do not
+add a dispatcher executable.
+
 VERIFY remains a coordinator-owned checkpoint with its existing scope and identity. If its
 Codex boundary uses a subprocess, use the same capture and artifact gate without assigning
 it a new commercial task tier.
