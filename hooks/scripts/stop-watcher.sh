@@ -135,6 +135,16 @@ EOF
 fi
 
 # --- State Validation ---
+if [ -L "$STATE_FILE" ]; then
+    cat <<'RECOVERY'
+## Unsafe State Path
+
+`.spec-drive-state.json` is a symlink. Refusing to follow it or resume execution.
+Inspect the path and recovery episode before continuing.
+RECOVERY
+    exit 0
+fi
+
 if ! jq empty "$STATE_FILE" 2>/dev/null; then
     cat <<'RECOVERY'
 ## Corrupt State Detected
@@ -161,6 +171,46 @@ MAX_TASK_ITER=$(jq -r '.maxTaskIterations // 5' "$STATE_FILE")
 GLOBAL_ITERATION=$(jq -r '.globalIteration // 1' "$STATE_FILE")
 MAX_GLOBAL_ITER=$(jq -r '.maxGlobalIterations // 100' "$STATE_FILE")
 AWAITING=$(jq -r '.awaitingApproval // false' "$STATE_FILE")
+
+# Recovery episodes are optional for compatibility with legacy state. A present
+# but malformed block is never treated as empty, since doing so could reset limits.
+if jq -e 'has("modelRecovery")' "$STATE_FILE" >/dev/null 2>&1; then
+    if ! jq -e '
+        (.modelRecovery | type == "object") and
+        (.modelRecovery.episodes | type == "object") and
+        ([.modelRecovery.episodes[]? |
+          ((.status | type == "string") and
+           (.choiceQueries | type == "number") and
+           (.retryReservations | type == "number") and
+           (.unitKey | type == "string") and
+           (.selectionFingerprint | type == "string"))] | all)
+    ' "$STATE_FILE" >/dev/null 2>&1; then
+        cat <<'RECOVERY'
+## Corrupt Recovery State
+
+The optional `modelRecovery` block is malformed. It was not reset or ignored.
+Inspect the state and recovery evidence before continuing; do not dispatch or
+ask for another choice until the persisted episode is repaired.
+RECOVERY
+        exit 0
+    fi
+    RECOVERY_BLOCKING=$(jq -r '
+      [.modelRecovery.episodes[]? |
+       select(.status == "awaiting_choice" or .status == "blocked" or
+              (.status == "retry_reserved" and .reservationCertainty == "uncertain"))]
+      | length > 0
+    ' "$STATE_FILE")
+    if [ "$RECOVERY_BLOCKING" = "true" ]; then
+        cat <<'RECOVERY'
+## Recovery Episode Pending
+
+A persisted model recovery episode is awaiting a choice, blocked, or has an
+uncertain retry reservation. Resume must inspect that same unit and episode;
+do not ask again, reserve another retry, or dispatch it automatically.
+RECOVERY
+        exit 0
+    fi
+fi
 
 GLOBAL_ITERATION="$(normalize_positive_int "$GLOBAL_ITERATION" 1)"
 MAX_GLOBAL_ITER="$(normalize_positive_int "$MAX_GLOBAL_ITER" 100)"

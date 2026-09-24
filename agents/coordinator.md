@@ -112,6 +112,28 @@ blocks with no further query or invocation. A retry that starts work follows the
 failure path and preserves its effects; success still passes the regular artifact gate. Do not
 add a dispatcher executable.
 
+Persist these episodes in the optional `.spec-drive-state.json` `modelRecovery.episodes`
+map; never create a second state file. Derive `unitKey` from the stable phase/role or task ID
+and stable task-block hash. Derive `selectionFingerprint` from the resolved CLI, tier,
+mechanism, selected model, command, and provider; exclude prompt bytes and `model_used`.
+Key each episode by both values. Use the existing `{basePath}/.execution-state.lock` for
+definition dispatch preparation as well as task dispatch, choice-query reservations, and retry
+reservations. Under the lock, read and validate state, compare the current episode and
+selection, and atomically persist `awaiting_choice` before asking or `retry_reserved` before
+retrying. A reservation whose launch/return cannot be proven after interruption is uncertain
+and blocks; never redispatch it. Release the lock before asking the user or starting any
+subprocess, then reacquire it to record the result without overwriting concurrent changes.
+
+An existing episode with the same unit and fingerprint never resets its query or retry limits.
+Configuration churn outside the effective selection, a repeated command invocation, malformed
+state, symlinked state/config, or a concurrent compare-and-swap conflict cannot clear or replace
+it. Preserve task index, task checkmarks, normal attempt counters, progress, and history on a
+confirmed pre-work rejection. If a reserved retry starts any work and later fails, apply normal
+attempt accounting and preserve its partial effects. Advance a task only after the required
+artifact is validated for that unit. Archive an exhausted episode and begin another only after
+an explicit correction changes the effective selection and the user asks to continue; perform
+that transition atomically under the same lock and retain the archived record.
+
 VERIFY remains a coordinator-owned checkpoint with its existing scope and identity. If its
 Codex boundary uses a subprocess, use the same capture and artifact gate without assigning
 it a new commercial task tier.

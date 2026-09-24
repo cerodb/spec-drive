@@ -27,6 +27,24 @@
         }
       },
       "additionalProperties": false
+    },
+    "modelRecoveryEpisode": {
+      "type": "object",
+      "required": ["unitKey", "selectionFingerprint", "status", "choiceQueries", "retryReservations"],
+      "properties": {
+        "unitKey": { "type": "string", "minLength": 1, "description": "Stable unit identity; excludes prompt text." },
+        "selectionFingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$", "description": "SHA-256 of the effective CLI, tier, mechanism, model, command, and provider; excludes prompt bytes." },
+        "status": { "type": "string", "enum": ["awaiting_choice", "retry_reserved", "blocked", "resolved", "archived"] },
+        "choiceQueries": { "type": "integer", "minimum": 0, "maximum": 1 },
+        "retryReservations": { "type": "integer", "minimum": 0, "maximum": 1 },
+        "reservationCertainty": { "type": "string", "enum": ["certain", "uncertain"] },
+        "failedModel": { "type": "string" },
+        "selectedModel": { "type": "string" },
+        "archiveReason": { "type": "string", "enum": ["explicit_effective_correction_and_continue"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
     }
   },
   "type": "object",
@@ -161,6 +179,19 @@
         },
         "required": ["status"]
       }
+    },
+    "modelRecovery": {
+      "type": "object",
+      "description": "Optional persisted recovery state; omission preserves compatibility with legacy state files.",
+      "properties": {
+        "episodes": {
+          "type": "object",
+          "description": "Episodes keyed by stable unitKey and selection fingerprint.",
+          "additionalProperties": { "$ref": "#/$defs/modelRecoveryEpisode" }
+        }
+      },
+      "required": ["episodes"],
+      "additionalProperties": false
     }
   },
   "additionalProperties": false

@@ -181,6 +181,27 @@ and unit key. A retry that starts work follows normal failure accounting; a seco
 rejection blocks without another query or dispatch. Success still requires the ordinary valid
 artifact gate. Never add a dispatcher executable or infer a fallback model/provider.
 
+Persist recovery under the optional `.spec-drive-state.json` `modelRecovery.episodes` field;
+legacy state without this field remains valid. Build `unitKey` from a stable definition role or
+task ID plus stable task-block hash. Build a SHA-256 `selectionFingerprint` from effective CLI,
+tier, mechanism, selected model, command, and provider; it must exclude prompt bytes and
+historical `model_used`. Key an episode by both values. Reuse the existing
+`{basePath}/.execution-state.lock` for definition and task dispatch preparation, query
+reservations, and retry reservations. Under that lock, compare current state and selection,
+then atomically persist `awaiting_choice` before asking or `retry_reserved` before retrying.
+Release the lock before user interaction or subprocess execution. Reacquire it to record the
+outcome and refuse to overwrite a concurrent change. If launch or return is uncertain after a
+restart, retain an uncertain reservation and block without redispatch.
+
+The same unit and fingerprint resume the existing episode. Repeated invocation, unrelated
+configuration changes, malformed state, unexpected symlinks, or concurrent conflicts never
+reset its limits. A confirmed pre-work rejection preserves task index, checkmarks, normal
+attempt counters, progress, and history. Once a retry starts work, any later failure uses
+ordinary attempt accounting and keeps partial effects. Advance only after validating the
+required artifact for that unit. Archive an exhausted episode and open another only when an
+explicit correction changes the effective selection and the user requests continuation; do
+both atomically under the existing lock and preserve the archived record.
+
 #### Resolve Model Tier (pre-dispatch, Regular Tasks only)
 
 Before delegating a Regular Task, resolve its `model:` tier to a concrete dispatch mechanism:
