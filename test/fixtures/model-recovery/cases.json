@@ -1,0 +1,17 @@
+{
+  "source": "coordinator DispatchResult observations following agents/coordinator.md C3/C4",
+  "positiveCapture": "../evidence/codex-rejection.jsonl",
+  "fixturesAreNotProviderEvidence": true,
+  "cases": [
+    {"id":"positive_existing","expected":{"outcome":"unavailable_before_work","started":"no","recoveryAllowed":true}},
+    {"id":"auth_error","expected":{"outcome":"other_failure","started":"unknown","recoveryAllowed":false}},
+    {"id":"network_error","expected":{"outcome":"other_failure","started":"unknown","recoveryAllowed":false}},
+    {"id":"generic_error","expected":{"outcome":"other_failure","started":"unknown","recoveryAllowed":false}},
+    {"id":"phrase_in_prompt_or_content","expected":{"outcome":"other_failure","started":"unknown","recoveryAllowed":false}},
+    {"id":"work_before_error","expected":{"outcome":"other_failure","started":"yes","recoveryAllowed":false}},
+    {"id":"invalid_or_truncated_json","expected":{"outcome":"other_failure","started":"unknown","recoveryAllowed":false}},
+    {"id":"unknown_event_or_version","expected":{"outcome":"other_failure","started":"unknown","recoveryAllowed":false}},
+    {"id":"different_model_id","expected":{"outcome":"other_failure","started":"unknown","recoveryAllowed":false}},
+    {"id":"missing_terminal_event","expected":{"outcome":"other_failure","started":"unknown","recoveryAllowed":false}}
+  ]
+}

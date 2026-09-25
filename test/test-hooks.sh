@@ -8,12 +8,42 @@ cd "$PLUGIN_ROOT"
 PASS=0
 FAIL=0
 TEST_TEMP_DIRS=()
+TEST_FIXTURE_TMP_ROOT=""
+
+# If the caller's TMPDIR is inside a configured workspace, resolver tests below
+# would inherit that real workspace config while trying to exercise XDG/default
+# fallback. Keep only these disposable fixtures outside that config tree.
+TMPDIR_SCAN="$(cd "${TMPDIR:-/tmp}" && pwd -P)"
+while :; do
+  if [ -f "$TMPDIR_SCAN/.spec-drive-config.json" ]; then
+    if [ -d /private/tmp ]; then
+      TEST_FIXTURE_TMP_BASE=/private/tmp
+    else
+      TEST_FIXTURE_TMP_BASE=/tmp
+    fi
+    TEST_FIXTURE_TMP_ROOT="$(mktemp -d "$TEST_FIXTURE_TMP_BASE/spec-drive-hooks.XXXXXX")"
+    break
+  fi
+  [ "$TMPDIR_SCAN" = / ] && break
+  TMPDIR_SCAN="$(dirname "$TMPDIR_SCAN")"
+done
+
+new_test_temp_dir() {
+  if [ -n "$TEST_FIXTURE_TMP_ROOT" ]; then
+    mktemp -d "$TEST_FIXTURE_TMP_ROOT/fixture.XXXXXX"
+  else
+    mktemp -d
+  fi
+}
 
 cleanup_test_dirs() {
   local dir
   for dir in "${TEST_TEMP_DIRS[@]}"; do
     rm -rf "$dir"
   done
+  if [ -n "$TEST_FIXTURE_TMP_ROOT" ]; then
+    rmdir "$TEST_FIXTURE_TMP_ROOT" 2>/dev/null || true
+  fi
 }
 trap cleanup_test_dirs EXIT
 
@@ -129,7 +159,7 @@ fi
 
 # Verify portable_realpath resolves correctly on this system. On macOS, /var is a
 # symlink to /private/var, so compare against the physical canonical path.
-REAL_TMP_DIR="$(mktemp -d)"
+REAL_TMP_DIR="$(new_test_temp_dir)"
 TEST_TEMP_DIRS+=("$REAL_TMP_DIR")
 EXPECTED_REAL_TMP_DIR="$(cd "$REAL_TMP_DIR" && pwd -P)"
 RESOLVED="$(bash -c ". hooks/scripts/resolve-config.sh && portable_realpath \"$REAL_TMP_DIR\"")"
@@ -142,7 +172,7 @@ fi
 echo "-- Ambiguous project safety..."
 # Canonicalize: on macOS mktemp -d returns a /var symlink path, while the
 # resolver reports the physical /private/var path it resolves to.
-TMP_HOME="$(cd "$(mktemp -d)" && pwd -P)"
+TMP_HOME="$(cd "$(new_test_temp_dir)" && pwd -P)"
 TEST_TEMP_DIRS+=("$TMP_HOME")
 mkdir -p "$TMP_HOME/spec-drive-projects/P100/spec" "$TMP_HOME/spec-drive-projects/P101/spec"
 mkdir -p "$TMP_HOME/.config/spec-drive"
@@ -223,7 +253,7 @@ else
 fi
 
 echo "-- Scoped per-key config resolution..."
-SCOPED_HOME="$(cd "$(mktemp -d)" && pwd -P)"
+SCOPED_HOME="$(cd "$(new_test_temp_dir)" && pwd -P)"
 TEST_TEMP_DIRS+=("$SCOPED_HOME")
 
 SCOPED_FLAT_WS="$SCOPED_HOME/flat-workspace"
@@ -573,7 +603,7 @@ else
 fi
 
 # AC2 + AC3: old files are deleted; recent files and unsupported-mtime are handled gracefully
-CLEANUP_TMP="$(cd "$(mktemp -d)" && pwd -P)"
+CLEANUP_TMP="$(cd "$(new_test_temp_dir)" && pwd -P)"
 TEST_TEMP_DIRS+=("$CLEANUP_TMP")
 
 # Create a mock project structure
@@ -645,6 +675,50 @@ if [ -f "$NEW_FILE" ]; then
   ok "cleanup preserves .progress-task-*.md files newer than 60 min"
 else
   fail "cleanup incorrectly deleted recent .progress-task-*.md file"
+fi
+
+echo "-- Persisted model recovery state..."
+RECOVERY_STATE="$TMP_HOME/spec-drive-projects/P100/spec/.spec-drive-state.json"
+cat >"$TMP_HOME/.config/spec-drive/config.json" <<EOF
+{"projectRoot":"$TMP_HOME/spec-drive-projects"}
+EOF
+run_recovery_stop_hook() {
+  HOME="$TMP_HOME" XDG_CONFIG_HOME="$TMP_HOME/.config" bash hooks/scripts/stop-watcher.sh <<'EOF'
+{"cwd":"/tmp"}
+EOF
+}
+
+# Legacy states omit modelRecovery and must keep their normal resume behavior.
+cat >"$RECOVERY_STATE" <<'EOF'
+{"name":"P100","phase":"execution","awaitingApproval":false,"mode":"normal","taskIndex":0,"totalTasks":1}
+EOF
+RECOVERY_OUTPUT="$(run_recovery_stop_hook)"
+if echo "$RECOVERY_OUTPUT" | grep -q "Continue spec: P100"; then
+  ok "legacy state without modelRecovery remains resumable"
+else
+  fail "legacy state without modelRecovery was not resumable"
+fi
+
+# A valid persisted pending episode blocks another dispatch/question after restart.
+cat >"$RECOVERY_STATE" <<'EOF'
+{"name":"P100","phase":"execution","awaitingApproval":false,"mode":"normal","taskIndex":0,"totalTasks":1,"modelRecovery":{"episodes":{"task-0":{"unitKey":"task-0","selectionFingerprint":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","status":"awaiting_choice","choiceQueries":1,"retryReservations":0}}}}
+EOF
+RECOVERY_OUTPUT="$(run_recovery_stop_hook)"
+if echo "$RECOVERY_OUTPUT" | grep -q "Recovery Episode Pending"; then
+  ok "valid awaiting_choice episode blocks after restart"
+else
+  fail "valid awaiting_choice episode did not block after restart"
+fi
+
+# Present-but-malformed state must be surfaced, never silently reset as legacy.
+cat >"$RECOVERY_STATE" <<'EOF'
+{"name":"P100","phase":"execution","awaitingApproval":false,"mode":"normal","taskIndex":0,"totalTasks":1,"modelRecovery":{"episodes":{"task-0":{"unitKey":"task-0","selectionFingerprint":"bad","status":"awaiting_choice","choiceQueries":"one","retryReservations":0}}}}
+EOF
+RECOVERY_OUTPUT="$(run_recovery_stop_hook)"
+if echo "$RECOVERY_OUTPUT" | grep -q "Corrupt Recovery State"; then
+  ok "malformed modelRecovery state is surfaced and not reset"
+else
+  fail "malformed modelRecovery state was not surfaced"
 fi
 
 echo ""

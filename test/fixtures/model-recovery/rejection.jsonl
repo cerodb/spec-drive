@@ -1,0 +1,10 @@
+{"case":"positive_existing","source":"../evidence/codex-rejection.jsonl","outcome":"unavailable_before_work","started":"no","signature":"codex-0.156.1-chatgpt-model-rejection-v1","recoveryAllowed":true}
+{"case":"auth_error","outcome":"other_failure","started":"unknown","recoveryAllowed":false}
+{"case":"network_error","outcome":"other_failure","started":"unknown","recoveryAllowed":false}
+{"case":"generic_error","outcome":"other_failure","started":"unknown","recoveryAllowed":false}
+{"case":"phrase_in_prompt_or_content","outcome":"other_failure","started":"unknown","recoveryAllowed":false}
+{"case":"work_before_error","outcome":"other_failure","started":"yes","recoveryAllowed":false}
+{"case":"invalid_or_truncated_json","outcome":"other_failure","started":"unknown","recoveryAllowed":false}
+{"case":"unknown_event_or_version","outcome":"other_failure","started":"unknown","recoveryAllowed":false}
+{"case":"different_model_id","outcome":"other_failure","started":"unknown","recoveryAllowed":false}
+{"case":"missing_terminal_event","outcome":"other_failure","started":"unknown","recoveryAllowed":false}
