@@ -1,5 +1,30 @@
 # Changelog
 
+## v1.4.2 — 2026-09-25
+
+Model-routing maintenance and recovery documentation. The four existing tiers
+and resolver behavior are unchanged.
+
+### Documented
+
+- Exact per-key selection order: a complete CLI-and-tier local override, a
+  compatible base plus model-only partial override, a legacy global tier
+  override, the CLI profile, then the default profile. A present invalid
+  selected value fails; absent values fall through. Unknown or absent tiers
+  inherit without probing profiles.
+- The effective model is resolved immediately before each dispatch from the
+  task's explicit tier. Historical `model_used` records what ran previously;
+  it never pins or raises the model for later dispatches.
+- Legacy global overrides remain usable with a warning. Conversion is a
+  manual choice by the user; Spec-Drive does not copy or transform values.
+- Model-rejection recovery is bounded, preserves partial work and unrelated
+  profile values, and excludes prompts, provider messages, and secrets from
+  persisted diagnostics.
+- Release staging distinguishes local source/package/install fixtures from
+  actual runtime smoke evidence and marketplace publication.
+
+No experimental local model override or private execution evidence is included.
+
 ## v1.4.1 — 2026-08-18
 
 Test-harness maintenance. **No runtime change.**
