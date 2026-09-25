@@ -233,6 +233,95 @@ for f in "${FILES[@]}"; do
   fi
 done
 
+# Candidate resolver portability matrix, sharing the fixture with test-smoke.
+echo "-- Resolver candidate C1/C2 matrix..."
+RESOLVER_SCRIPT="$PLUGIN_ROOT/hooks/scripts/resolve-model.sh"
+RESOLVER_CASES="$PLUGIN_ROOT/test/fixtures/model-recovery/resolver-cases.json"
+RESOLVER_XDG="$TMP_DIR/resolver-xdg"
+mkdir -p "$RESOLVER_XDG/spec-drive"
+RESOLVER_PROFILE="$RESOLVER_XDG/spec-drive/profiles.local.json"
+jq -n --slurpfile cases "$RESOLVER_CASES" '
+  ($cases[0]) as $c |
+  {profiles:{
+    codex:{light:$c.scenarios.codex},
+    "claude-code":{light:$c.scenarios["claude-code"]},
+    coda:{light:$c.scenarios.coda}
+  }}' > "$RESOLVER_PROFILE"
+
+for resolver_cli in $(jq -r '.clis[]' "$RESOLVER_CASES"); do
+  resolver_model="$(jq -r --arg cli "$resolver_cli" '.scenarios[$cli].model' "$RESOLVER_CASES")"
+  resolver_mechanism="$(jq -r --arg cli "$resolver_cli" '.scenarios[$cli].mechanism' "$RESOLVER_CASES")"
+  resolver_err="$TMP_DIR/resolver-$resolver_cli.stderr"
+  resolver_out="$(XDG_CONFIG_HOME="$RESOLVER_XDG" bash "$RESOLVER_SCRIPT" light "$resolver_cli" 2>"$resolver_err")"
+  if printf '%s\n' "$resolver_out" | grep -Fqx "cli=$resolver_cli" && \
+     printf '%s\n' "$resolver_out" | grep -Fqx "model=$resolver_model" && \
+     printf '%s\n' "$resolver_out" | grep -Fqx "mechanism=$resolver_mechanism" && \
+     [ ! -s "$resolver_err" ]; then
+    ok "$resolver_cli explicit CLI selection uses its fixture profile"
+  else
+    fail "$resolver_cli explicit CLI selection did not match the fixture"
+  fi
+done
+
+# Exercise legacy global warning and scoped-over-legacy precedence, then partial
+# inheritance and explicit stubs/inherit behavior without commercial model IDs.
+jq --arg model "$(jq -r '.models.beta' "$RESOLVER_CASES")" \
+  '. + {light:{mechanism:"unsupported",model:$model}}' "$RESOLVER_PROFILE" > "$RESOLVER_PROFILE.next"
+mv "$RESOLVER_PROFILE.next" "$RESOLVER_PROFILE"
+legacy_out="$(XDG_CONFIG_HOME="$RESOLVER_XDG" bash "$RESOLVER_SCRIPT" light codex 2>"$TMP_DIR/resolver-legacy.stderr")"
+if printf '%s\n' "$legacy_out" | grep -Fqx "model=$(jq -r '.models.alpha' "$RESOLVER_CASES")" && \
+   grep -q '^warning=legacy_global_override$' "$TMP_DIR/resolver-legacy.stderr" && \
+   ! grep -q 'fixture-model-' "$TMP_DIR/resolver-legacy.stderr"; then
+  ok "global legacy warning is sanitized while scoped profile keeps precedence"
+else
+  fail "legacy warning or scoped precedence regression"
+fi
+
+jq -n --slurpfile cases "$RESOLVER_CASES" '
+  ($cases[0]) as $c |
+  {profiles:{($c.partial.cli):{($c.partial.tier):{model:$c.partial.model}}},
+   ($c.partial.tier):$c.partial.base}' > "$RESOLVER_PROFILE"
+partial_out="$(XDG_CONFIG_HOME="$RESOLVER_XDG" bash "$RESOLVER_SCRIPT" \
+  "$(jq -r '.partial.tier' "$RESOLVER_CASES")" "$(jq -r '.partial.cli' "$RESOLVER_CASES")" 2>"$TMP_DIR/resolver-partial.stderr")"
+if printf '%s\n' "$partial_out" | grep -Fqx "cmd=$(jq -r '.partial.expectedCmd' "$RESOLVER_CASES")" && \
+   printf '%s\n' "$partial_out" | grep -Fqx "model=$(jq -r '.partial.model' "$RESOLVER_CASES")" && \
+   grep -q '^warning=legacy_global_override$' "$TMP_DIR/resolver-partial.stderr" && \
+   ! grep -q 'fixture-model-' "$TMP_DIR/resolver-partial.stderr"; then
+  ok "partial model override inherits compatible command base"
+else
+  fail "partial override did not preserve its compatible command base"
+fi
+
+# Shipped Coda profiles are stubs and remain unresolved; explicit inherit is
+# honored, and malformed CLI path inputs cannot escape the profile directory.
+set +e
+stub_out="$(bash "$RESOLVER_SCRIPT" light coda 2>"$TMP_DIR/resolver-stub.stderr")"
+stub_status=$?
+set -e
+jq -n '{profiles:{codex:{advanced:{mechanism:"inherit"}}}}' > "$RESOLVER_PROFILE"
+inherit_out="$(XDG_CONFIG_HOME="$RESOLVER_XDG" bash "$RESOLVER_SCRIPT" advanced codex 2>"$TMP_DIR/resolver-inherit.stderr")"
+if [ "$stub_status" -ne 0 ] && grep -q '^error=invalid_profile$' "$TMP_DIR/resolver-stub.stderr" && \
+   grep -Fq 'requires an explicit model' "$TMP_DIR/resolver-stub.stderr" && \
+   [ -z "$stub_out" ] && printf '%s\n' "$inherit_out" | grep -Fqx 'mechanism=inherit' && \
+   [ ! -s "$TMP_DIR/resolver-inherit.stderr" ]; then
+  ok "shipped Coda stub fails closed and explicit inherit is supported"
+else
+  fail "stub or explicit inherit compatibility changed"
+fi
+
+resolver_sentinel="$TMP_DIR/$(jq -r '.sentinel' "$RESOLVER_CASES")"
+for unsafe_cli in $(jq -r '.unsafeCliIds[]' "$RESOLVER_CASES"); do
+  set +e
+  hostile_out="$(XDG_CONFIG_HOME="$RESOLVER_XDG" bash "$RESOLVER_SCRIPT" light "$unsafe_cli" 2>"$TMP_DIR/resolver-hostile-cli.stderr")"
+  hostile_status=$?
+  set -e
+  if [ "$hostile_status" -eq 1 ] && [ -z "$hostile_out" ] && [ ! -e "$resolver_sentinel" ]; then
+    ok "hostile CLI path is rejected without filesystem effects"
+  else
+    fail "hostile CLI path caused output or filesystem effects"
+  fi
+done
+
 echo ""
 echo "Passed: $PASS | Failed: $FAIL"
 
