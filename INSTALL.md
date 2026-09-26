@@ -119,8 +119,8 @@ runtime configuration changes. `model_used:` in `tasks.md` is historical
 metadata describing a completed task; it never pins the model for a later run
 and never raises a task's tier.
 
-The authorized 1.4.3 defaults are Codex light `gpt-6-luna`, standard
-`gpt-6-sol`, advanced/frontier `gpt-6-astra`; Claude Code frontier uses
+The authorized 1.4.3 defaults are Codex light `gpt-5.6-luna`, standard
+`gpt-5.6-sol`, advanced/frontier `gpt-6-astra`; Claude Code frontier uses
 `opus` (the other Claude tiers retain their existing mappings). Account access
 was validated on the maintainer's Dell environment. This is not evidence that
 the complete adapter pilot or package-manager installation has passed, nor a

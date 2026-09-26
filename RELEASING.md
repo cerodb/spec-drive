@@ -50,7 +50,7 @@ learnings, and use targeted reads when context is missing.
 
 ## Provider and publication gates
 
-The authorized defaults are Codex light gpt-6-luna, standard gpt-6-sol and
+The authorized defaults are Codex light gpt-5.6-luna, standard gpt-5.6-sol and
 advanced/frontier gpt-6-astra; Claude Code frontier is opus, with its other tiers
 unchanged. Access validation on the maintainer's Dell is account-specific and does
 not establish adapter-pilot success. Do not infer availability from resolver output
