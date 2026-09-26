@@ -1,8 +1,10 @@
 # Changelog
 
-## v1.4.3 — Unreleased
+## v1.4.3 — 2026-09-26
 
-Local candidate; publication, installation and provider validation remain pending.
+Source release with separate marketplace distribution and Codex adapter setup.
+Provider checks apply only to the tested account, CLI version and date; they do
+not establish CI results or successful installation in another environment.
 
 - Preserve quoted legacy prompt-file commands; reject control characters before
   line-based resolver output and use literal CLI keys.

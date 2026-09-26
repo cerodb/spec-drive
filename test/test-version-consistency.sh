@@ -7,7 +7,7 @@ test "$(jq -er '.version' "$ROOT/.claude-plugin/plugin.json")" = "$version"
 for document in INSTALL.md RELEASING.md; do
   grep -Fq "$version" "$ROOT/$document"
 done
-readme_version="$(sed -n 's/^- Current source candidate: `v\([^`]*\)`.*/\1/p' "$ROOT/README.md")"
+readme_version="$(sed -n -e 's/^- Current source candidate: `v\([^`]*\)`.*/\1/p' -e 's/^- Current release: `v\([^`]*\)`.*/\1/p' "$ROOT/README.md")"
 test "$readme_version" = "$version"
 changelog_version="$(sed -n '/^## v/{s/^## v\([^ ]*\).*/\1/;p;q;}' "$ROOT/CHANGELOG.md")"
 test "$changelog_version" = "$version"

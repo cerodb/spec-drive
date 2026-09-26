@@ -2,9 +2,11 @@
 
 This file is the operational install guide for `spec-drive`.
 
-This checkout is the **1.4.3 local candidate**. Marketplace commands below do
-not imply that 1.4.3 is published or installed. Provider availability, actual
-package-manager update/reinstall and adapter promotion require separate checks.
+This guide covers **1.4.3**. Use the
+[marketplace installation instructions](https://github.com/cerodb/cerodb-plugins#installation)
+for distribution, and [cerodb/spec-drive](https://github.com/cerodb/spec-drive)
+for source, issues and releases. Verify the installed version after each manager
+update or reinstall; Codex adapter installation remains a separate step.
 
 Use it when you want concrete setup steps instead of the higher-level overview in `README.md`.
 
@@ -122,7 +124,7 @@ and never raises a task's tier.
 The authorized 1.4.3 defaults are Codex light `gpt-5.6-luna`, standard
 `gpt-5.6-sol`, advanced/frontier `gpt-6-astra`; Claude Code frontier uses
 `opus` (the other Claude tiers retain their existing mappings). Account access
-was validated on the maintainer's Dell environment. This is not evidence that
+was validated on the maintainer's account on 2026-09-26. This is not evidence that
 the complete adapter pilot or package-manager installation has passed, nor a
 guarantee of availability in another account.
 
@@ -189,7 +191,7 @@ Preferred direction:
 
 Current status:
 
-- the marketplace is the distribution channel; this candidate has not validated its published version
+- the marketplace is the distribution channel; verify its displayed version and the installed bytes after installation
 - the steps below remain the source-repo bootstrap path
 
 This repo already contains Claude-style plugin metadata:
@@ -223,7 +225,7 @@ There is no native Codex installer in this repo yet.
 
 `review/adapter-codex/SKILL.md` is the full Codex companion distributed alongside
 the core; it is installed separately. Merely unpacking this source does not replace
-an installed skill. `spec/pg219/` is local tracking and is excluded from distribution.
+an installed skill.
 
 For a separately installed companion, set `SPEC_DRIVE_DIR` to the absolute root
 of the selected core (containing `commands/`, `agents/`, and `hooks/`) in its

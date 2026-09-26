@@ -1,11 +1,15 @@
 # Releasing Spec-Drive
 
-## Candidate 1.4.3
+## Release 1.4.3
 
-This is local preparation, not a published or installed release. Model access
-has been validated on the maintainer's Dell environment; the complete adapter
-pilot, marketplace publication, actual package-manager update/reinstall and
-promotion of the Codex adapter remain separate gates. Record each actual result.
+The canonical source, issue tracker and releases are maintained in
+[cerodb/spec-drive](https://github.com/cerodb/spec-drive). Distribution and
+[installation instructions](https://github.com/cerodb/cerodb-plugins#installation)
+live in the marketplace repository. Synchronize both for each release.
+Model access was validated on the maintainer's account on 2026-09-26; provider
+results remain account-, CLI-version- and date-specific. Record the complete
+adapter pilot, actual package-manager update/reinstall and Codex adapter promotion
+separately; source publication does not establish those results.
 
 Synchronize package.json, .claude-plugin/plugin.json, README.md, INSTALL.md and
 CHANGELOG.md. Run `npm test` from this checkout. CI is configured for Linux and
@@ -35,7 +39,7 @@ coordinator or provider execution. Guided evidence is checked separately with
 ## Distribution contents and review
 
 Copy runtime directories and manifests from the exact validated source candidate.
-Include public documentation as appropriate. Exclude local spec/pg219/ tracking,
+Include public documentation as appropriate. Exclude local implementation tracking,
 user overrides, private captures, credentials and experimental model settings.
 Include the full review/adapter-codex/SKILL.md as a separately distributed companion,
 along with its installation instructions. It is not installed automatically with the
@@ -52,7 +56,7 @@ learnings, and use targeted reads when context is missing.
 
 The authorized defaults are Codex light gpt-5.6-luna, standard gpt-5.6-sol and
 advanced/frontier gpt-6-astra; Claude Code frontier is opus, with its other tiers
-unchanged. Access validation on the maintainer's Dell is account-specific and does
+unchanged. Access validation on the maintainer's account on 2026-09-26 does
 not establish adapter-pilot success. Do not infer availability from resolver output
 or fixtures. Retain date, CLI/version, requested/effective model, exit status and
 real result in sanitized evidence. Record the isolated end-to-end pilot separately

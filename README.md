@@ -2,6 +2,12 @@
 
 Spec-driven development workflow for coding CLIs.
 
+[cerodb/spec-drive](https://github.com/cerodb/spec-drive) is the canonical source
+for development, [issues](https://github.com/cerodb/spec-drive/issues), and
+[releases](https://github.com/cerodb/spec-drive/releases). For installation, use the
+[cerodb-plugins marketplace instructions](https://github.com/cerodb/cerodb-plugins#installation).
+See [INSTALL.md](./INSTALL.md) for runtime-specific setup and model overrides.
+
 It takes a project through this chain:
 
 `idea -> research -> requirements -> design -> tasks -> implement`
@@ -18,8 +24,6 @@ Each phase produces plain Markdown artifacts so another runtime can continue wit
 - `skills/` — supporting workflow and style guidance
 - `test/` — validation scripts
 - `review/adapter-codex/` — adapter review companion, not automatically installed
-
-`spec/pg219/` is local implementation tracking and is excluded from plugin distribution.
 
 ## Runtime Support
 
@@ -86,13 +90,13 @@ receive at most one retry with the same prompt, unit and template. Uncertain out
 and unreconciled reservations pause for supervised review.
 
 The shipped model selections are defaults, not proof of availability for your account.
-Historical probes do not establish availability for this candidate. Coda/default stubs
+Provider results apply to the tested account, CLI version and date. Coda/default stubs
 remain inactive until configured. The adapter at `review/adapter-codex/SKILL.md` is a
 review companion and is not installed by this repository.
 
 ## macOS Compatibility
 
-The GitHub Actions workflow configures Linux and macOS checks. A configured workflow is not evidence that this candidate passed CI.
+The GitHub Actions workflow configures Linux and macOS checks. Consult the actual run for the release commit before treating CI as passed.
 
 All shell scripts avoid GNU-only extensions:
 
@@ -103,7 +107,7 @@ Prerequisites on macOS: `bash`, `git`, `jq`, `python3`. Install `jq` via Homebre
 
 ## Release Notes
 
-- Current source candidate: `v1.4.3` (unreleased). Publication, installation and provider smoke remain pending.
+- Current release: `v1.4.3` (2026-09-26). See [release details](https://github.com/cerodb/spec-drive/releases/tag/v1.4.3).
 - `v1.4.3` fixes recovery continuation and legacy command handling and makes local validation self-contained.
 - `v1.4.1` added macOS test-harness fixes without a runtime change over `v1.4.0`.
 - `v1.4.0` adds scoped per-key configuration, atomic project scaffolding, canonical project artifact destinations, and expanded portability/security regression coverage.
@@ -134,7 +138,7 @@ Prerequisites on macOS: `bash`, `git`, `jq`, `python3`. Install `jq` via Homebre
 
 Preferred install path for Claude-compatible runtimes:
 
-- install from the `cerodb/cerodb-plugins` marketplace repo
+- install from the [cerodb/cerodb-plugins marketplace](https://github.com/cerodb/cerodb-plugins#installation)
 
 Current marketplace install:
 
