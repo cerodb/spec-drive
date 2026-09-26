@@ -16,13 +16,11 @@ PACKAGE="$STAGING/package"
 INSTALL="$STAGING/installation"
 APPROVED_ADAPTER="$WORK/adapter-codex/SKILL.md"
 STAGED_ADAPTER="$STAGED/adapter-codex/SKILL.md"
-APPROVED_XDG="$WORK/execution-xdg/spec-drive/profiles.local.json"
 XDG_FIXTURE="$STAGING/xdg/spec-drive/profiles.local.json"
 XDG_BEFORE="$STAGING/xdg/profiles.local.approved.json"
 
 [ -d "$STAGED" ] || fail "staged directory does not exist: $STAGED"
 [ -f "$APPROVED_ADAPTER" ] || fail "approved external adapter is missing"
-[ -f "$APPROVED_XDG" ] || fail "approved XDG override fixture is missing"
 
 profiles=("$ROOT"/profiles/*.json)
 sha256_file() { shasum -a 256 "$1" | awk '{print $1}'; }
@@ -83,7 +81,10 @@ diff -qr "$PACKAGE" "$INSTALL" >/dev/null || fail "isolated package and installa
 
 [ -f "$XDG_FIXTURE" ] || fail "isolated XDG fixture override is missing"
 [ -f "$XDG_BEFORE" ] || fail "approved XDG fixture snapshot is missing"
-cmp -s "$APPROVED_XDG" "$XDG_BEFORE" || fail "approved XDG fixture snapshot differs from source"
+python3 -c 'import json,sys; sys.exit(0 if json.load(open(sys.argv[1], encoding="utf-8")) == {} else 1)' "$XDG_FIXTURE" \
+  || fail "isolated XDG fixture must be an empty JSON object"
+python3 -c 'import json,sys; sys.exit(0 if json.load(open(sys.argv[1], encoding="utf-8")) == {} else 1)' "$XDG_BEFORE" \
+  || fail "approved XDG fixture snapshot must be an empty JSON object"
 cmp -s "$XDG_BEFORE" "$XDG_FIXTURE" || fail "XDG fixture override differs before release operations"
 before_sha="$(shasum -a 256 "$XDG_FIXTURE" | awk '{print $1}')"
 
@@ -98,11 +99,24 @@ cmp -s "$XDG_BEFORE" "$XDG_FIXTURE" || fail "full XDG override bytes changed acr
 
 # Prove that the fixture comparison notices a divergence, then restore from the approved file.
 printf '\n' >> "$XDG_FIXTURE"
-if python3 "$WORK/verify-evidence.py" release-staged >/dev/null 2>&1; then
+tamper_output="$(mktemp "${TMPDIR:-/tmp}/release-staged-tamper.XXXXXX")"
+if python3 "$WORK/verify-evidence.py" release-staged >"$tamper_output" 2>&1; then
+  cp "$XDG_BEFORE" "$XDG_FIXTURE"
+  rm -f "$tamper_output"
+  cmp -s "$XDG_BEFORE" "$XDG_FIXTURE" || fail "fixture was not restored after an unexpected verifier acceptance"
   fail "release-staged verifier accepted deliberate XDG fixture divergence"
 fi
+if ! grep -Fq "XDG fixture differs from its approved byte snapshot" "$tamper_output"; then
+  cp "$XDG_BEFORE" "$XDG_FIXTURE"
+  rm -f "$tamper_output"
+  cmp -s "$XDG_BEFORE" "$XDG_FIXTURE" || fail "fixture was not restored after an unexpected verifier failure"
+  fail "release-staged rejected deliberate divergence for an unexpected reason"
+fi
+rm -f "$tamper_output"
 cp "$XDG_BEFORE" "$XDG_FIXTURE"
 cmp -s "$XDG_BEFORE" "$XDG_FIXTURE" || fail "fixture was not restored from approved copy"
+after_restore_sha="$(shasum -a 256 "$XDG_FIXTURE" | awk '{print $1}')"
+[ "$before_sha" = "$after_restore_sha" ] || fail "restored XDG fixture bytes differ from the pre-test snapshot"
 
-echo "PASS: source/staged hashes, isolated copy installation, external adapter SHA-256 ($adapter_source_sha), and XDG override bytes agree"
+echo "PASS: source/staged hashes, isolated copy installation, external adapter SHA-256 ($adapter_source_sha), and empty staging XDG fixture integrity agree"
 echo "NOTE: package and installation checks use local file copies; no published release or real package manager is claimed."
