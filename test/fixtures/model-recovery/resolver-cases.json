@@ -1,0 +1,55 @@
+{
+  "models": {
+    "alpha": "fixture-model-alpha",
+    "beta": "fixture-model-beta"
+  },
+  "clis": ["codex", "claude-code", "coda"],
+  "scenarios": {
+    "codex": {
+      "mechanism": "subprocess",
+      "model": "fixture-model-alpha",
+      "cmd": "codex-stub --model {MODEL} --prompt {promptfile}"
+    },
+    "claude-code": {
+      "mechanism": "agent",
+      "model": "fixture-model-beta"
+    },
+    "coda": {
+      "mechanism": "subprocess",
+      "model": "fixture-model-alpha",
+      "cmd": "coda-stub --model {MODEL} --prompt {promptfile}"
+    }
+  },
+  "partial": {
+    "cli": "codex",
+    "tier": "standard",
+    "model": "fixture-model-beta",
+    "base": {
+      "mechanism": "subprocess",
+      "model": "fixture-model-alpha",
+      "cmd": "codex-stub --model {MODEL} --prompt {promptfile}"
+    },
+    "expectedCmd": "codex-stub --model fixture-model-beta --prompt {promptfile}"
+  },
+  "legacy": {
+    "tier": "light",
+    "mechanism": "agent",
+    "model": "fixture-model-alpha"
+  },
+  "unsafeModels": [
+    "model with spaces",
+    "model'quoted",
+    "model\"quoted",
+    "model\nsecond-line",
+    "$(touch SENTINEL)",
+    "`touch SENTINEL`",
+    "--model-prefix"
+  ],
+  "unsafeCliIds": [
+    "../codex",
+    "codex/../../tmp/evil",
+    "codex;touch-SENTINEL",
+    "--codex"
+  ],
+  "sentinel": "resolver-sentinel-must-not-exist"
+}

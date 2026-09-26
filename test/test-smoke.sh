@@ -236,10 +236,11 @@ else
   CODEX_EXIT=$?
   set -e
 
-  if [ "$CODEX_EXIT" -eq 0 ] && printf '%s\n' "$CODEX_OUT" | grep -q '^cmd=codex exec -m gpt-5.4-mini -s workspace-write -- < {promptfile}$'; then
-    ok "resolver maps codex light tier to a concrete subprocess command"
+  DEFAULT_CODEX_MODEL="$(jq -r '.light.model' "$PLUGIN_ROOT/profiles/codex.json")"
+  if [ "$CODEX_EXIT" -eq 0 ] && printf '%s\n' "$CODEX_OUT" | grep -Fqx "cmd=codex exec -m $DEFAULT_CODEX_MODEL -s workspace-write -- < {promptfile}"; then
+    ok "resolver maps codex light tier using the shipped profile"
   else
-    fail "resolver should map codex light tier to a concrete subprocess command"
+    fail "resolver should map codex light tier using the shipped profile"
   fi
 
   if [ ! -s "$CODEX_STDERR" ]; then
@@ -260,10 +261,11 @@ else
     fail "resolver should fail when shipped coda subprocess profile still contains placeholders"
   fi
 
-  if grep -q '^error=unresolved_placeholder$' "$PLACEHOLDER_STDERR"; then
-    ok "resolver reports unresolved_placeholder for coda template stubs"
+  if grep -q '^error=invalid_profile$' "$PLACEHOLDER_STDERR" && \
+    grep -Fq 'requires an explicit model' "$PLACEHOLDER_STDERR"; then
+    ok "resolver reports a sanitized invalid-profile diagnostic for coda template stubs"
   else
-    fail "resolver should report error=unresolved_placeholder for coda template stubs"
+    fail "resolver should report a sanitized invalid-profile diagnostic for coda template stubs"
   fi
 
   if [ -z "$PLACEHOLDER_OUT" ]; then
@@ -324,7 +326,7 @@ EOF_MODEL_PROJECT
   PARTIAL_EXIT=$?
   set -e
 
-  if [ "$PARTIAL_EXIT" -eq 0 ] && printf '%s\n' "$PARTIAL_OUT" | grep -q '^cmd=codex exec -m gpt-5.4-mini -s workspace-write -- < {promptfile}$'; then
+  if [ "$PARTIAL_EXIT" -eq 0 ] && printf '%s\n' "$PARTIAL_OUT" | grep -Fqx "cmd=codex exec -m $DEFAULT_CODEX_MODEL -s workspace-write -- < {promptfile}"; then
     ok "partial project config inherits workspace cli selection"
   else
     fail "partial project config should inherit workspace cli selection"
@@ -452,6 +454,184 @@ EOF_INVALID_MODEL_PROJECT
   else
     fail "invalid-present cli detection should emit no stdout"
   fi
+fi
+
+# Candidate resolver regression matrix shared with the cross-CLI suite.
+echo "-- Candidate resolver matrix and hostile-input checks..."
+RESOLVER_CASES="$PLUGIN_ROOT/test/fixtures/model-recovery/resolver-cases.json"
+MATRIX_XDG="$TMPDIR_SMOKE/resolver-matrix-xdg"
+mkdir -p "$MATRIX_XDG/spec-drive"
+MATRIX_PROFILE="$MATRIX_XDG/spec-drive/profiles.local.json"
+jq -n --slurpfile cases "$RESOLVER_CASES" '
+  ($cases[0]) as $c |
+  {profiles:{
+    codex:{light:$c.scenarios.codex},
+    "claude-code":{light:$c.scenarios["claude-code"]},
+    coda:{light:$c.scenarios.coda}
+  }}' > "$MATRIX_PROFILE"
+
+for matrix_cli in $(jq -r '.clis[]' "$RESOLVER_CASES"); do
+  matrix_expected="$(jq -r --arg cli "$matrix_cli" '.scenarios[$cli].model' "$RESOLVER_CASES")"
+  matrix_mechanism="$(jq -r --arg cli "$matrix_cli" '.scenarios[$cli].mechanism' "$RESOLVER_CASES")"
+  MATRIX_STDERR="$TMPDIR_SMOKE/matrix-$matrix_cli.stderr"
+  MATRIX_OUT="$(XDG_CONFIG_HOME="$MATRIX_XDG" bash "$RESOLVE_MODEL_SCRIPT" light "$matrix_cli" 2>"$MATRIX_STDERR")"
+  if printf '%s\n' "$MATRIX_OUT" | grep -Fqx "model=$matrix_expected" && \
+     printf '%s\n' "$MATRIX_OUT" | grep -Fqx "mechanism=$matrix_mechanism" && \
+     [ ! -s "$MATRIX_STDERR" ]; then
+    ok "explicit $matrix_cli selects its fixture-scoped complete profile"
+  else
+    fail "explicit $matrix_cli should select its fixture-scoped complete profile"
+  fi
+done
+
+# A complete scoped profile outranks an invalid global legacy value while still
+# warning that the legacy format is global and needs a user-directed conversion.
+jq --arg model "$(jq -r '.models.beta' "$RESOLVER_CASES")" \
+  '. + {light:{mechanism:"unsupported",model:$model}}' "$MATRIX_PROFILE" > "$MATRIX_PROFILE.next"
+mv "$MATRIX_PROFILE.next" "$MATRIX_PROFILE"
+MATRIX_WARN_OUT="$(XDG_CONFIG_HOME="$MATRIX_XDG" bash "$RESOLVE_MODEL_SCRIPT" light codex 2>"$TMPDIR_SMOKE/matrix-legacy.stderr")"
+if printf '%s\n' "$MATRIX_WARN_OUT" | grep -Fqx "model=$(jq -r '.models.alpha' "$RESOLVER_CASES")" && \
+   grep -q '^warning=legacy_global_override$' "$TMPDIR_SMOKE/matrix-legacy.stderr" && \
+   ! grep -q 'fixture-model-' "$TMPDIR_SMOKE/matrix-legacy.stderr"; then
+  ok "scoped complete profile wins over legacy and warning hides values"
+else
+  fail "scoped profile precedence or sanitized legacy warning is incorrect"
+fi
+
+# A model-only scoped override inherits a compatible subprocess command and
+# substitutes only the standalone model argument.
+PARTIAL_CLI="$(jq -r '.partial.cli' "$RESOLVER_CASES")"
+PARTIAL_TIER="$(jq -r '.partial.tier' "$RESOLVER_CASES")"
+jq -n --slurpfile cases "$RESOLVER_CASES" '
+  ($cases[0]) as $c |
+  {profiles:{($c.partial.cli):{($c.partial.tier):{model:$c.partial.model}}},
+   ($c.partial.tier):$c.partial.base}' > "$MATRIX_PROFILE"
+PARTIAL_MATRIX_OUT="$(XDG_CONFIG_HOME="$MATRIX_XDG" bash "$RESOLVE_MODEL_SCRIPT" "$PARTIAL_TIER" "$PARTIAL_CLI" 2>"$TMPDIR_SMOKE/matrix-partial.stderr")"
+if printf '%s\n' "$PARTIAL_MATRIX_OUT" | grep -Fqx "cmd=$(jq -r '.partial.expectedCmd' "$RESOLVER_CASES")" && \
+   printf '%s\n' "$PARTIAL_MATRIX_OUT" | grep -Fqx "model=$(jq -r '.partial.model' "$RESOLVER_CASES")" && \
+   grep -q '^warning=legacy_global_override$' "$TMPDIR_SMOKE/matrix-partial.stderr" && \
+   ! grep -q 'fixture-model-' "$TMPDIR_SMOKE/matrix-partial.stderr"; then
+  ok "partial model override inherits and validates its subprocess base"
+else
+  fail "partial model override should inherit the fixture subprocess base"
+fi
+
+# Inherit is explicit and unknown tiers retain the compatibility behavior.
+jq -n '{profiles:{codex:{advanced:{mechanism:"inherit"}}}}' > "$MATRIX_PROFILE"
+INHERIT_OUT="$(XDG_CONFIG_HOME="$MATRIX_XDG" bash "$RESOLVE_MODEL_SCRIPT" advanced codex 2>"$TMPDIR_SMOKE/matrix-inherit.stderr")"
+UNKNOWN_OUT="$(XDG_CONFIG_HOME="$MATRIX_XDG" bash "$RESOLVE_MODEL_SCRIPT" unknown codex 2>"$TMPDIR_SMOKE/matrix-unknown.stderr")"
+if printf '%s\n' "$INHERIT_OUT" | grep -Fqx 'mechanism=inherit' && \
+   printf '%s\n' "$UNKNOWN_OUT" | grep -Fqx 'mechanism=inherit' && \
+   [ ! -s "$TMPDIR_SMOKE/matrix-inherit.stderr" ] && [ ! -s "$TMPDIR_SMOKE/matrix-unknown.stderr" ]; then
+  ok "explicit inherit and unknown-tier inheritance remain compatible"
+else
+  fail "inherit compatibility behavior changed"
+fi
+
+# Invalid model syntax and CLI path traversal must fail without output, effects,
+# or disclosure of the fixture's sentinel string.
+MATRIX_SENTINEL="$TMPDIR_SMOKE/$(jq -r '.sentinel' "$RESOLVER_CASES")"
+for unsafe_model in $(jq -r '.unsafeModels[] | @base64' "$RESOLVER_CASES"); do
+  unsafe_value="$(printf '%s' "$unsafe_model" | base64 -d)"
+  jq -n --arg value "$unsafe_value" '{profiles:{codex:{light:{model:$value}}}}' > "$MATRIX_PROFILE"
+  set +e
+  unsafe_out="$(XDG_CONFIG_HOME="$MATRIX_XDG" bash "$RESOLVE_MODEL_SCRIPT" light codex 2>"$TMPDIR_SMOKE/matrix-unsafe-model.stderr")"
+  unsafe_status=$?
+  set -e
+  unsafe_stderr="$(cat "$TMPDIR_SMOKE/matrix-unsafe-model.stderr")"
+  unsafe_leaked=false
+  case "$unsafe_stderr" in *"$unsafe_value"*) unsafe_leaked=true ;; esac
+  if [ "$unsafe_status" -eq 1 ] && [ -z "$unsafe_out" ] && \
+     [ "$unsafe_leaked" = false ] && \
+     [ ! -e "$MATRIX_SENTINEL" ]; then
+    ok "unsafe model value is rejected inertly and sanitized"
+  else
+    fail "unsafe model value caused output, disclosure, or an unexpected effect"
+  fi
+done
+
+for unsafe_cli in $(jq -r '.unsafeCliIds[]' "$RESOLVER_CASES"); do
+  set +e
+  unsafe_cli_out="$(XDG_CONFIG_HOME="$MATRIX_XDG" bash "$RESOLVE_MODEL_SCRIPT" light "$unsafe_cli" 2>"$TMPDIR_SMOKE/matrix-unsafe-cli.stderr")"
+  unsafe_cli_status=$?
+  set -e
+  if [ "$unsafe_cli_status" -eq 1 ] && [ -z "$unsafe_cli_out" ] && [ ! -e "$MATRIX_SENTINEL" ]; then
+    ok "adversarial CLI identifier is rejected before profile path use"
+  else
+    fail "adversarial CLI identifier was not safely rejected"
+  fi
+done
+
+# Invalid secret-bearing values must be sanitized, and shell metacharacters in
+# a validated command template must remain inert data.
+MATRIX_SECRET='resolver-secret-sentinel-9f2a'
+jq -n --arg secret "$MATRIX_SECRET" --arg sentinel "$MATRIX_SENTINEL" '
+  {profiles:{codex:{light:{model:("bad model " + $secret + " $(touch " + $sentinel + ")")}}}}' > "$MATRIX_PROFILE"
+set +e
+SECRET_OUT="$(XDG_CONFIG_HOME="$MATRIX_XDG" bash "$RESOLVE_MODEL_SCRIPT" light codex 2>"$TMPDIR_SMOKE/matrix-secret.stderr")"
+SECRET_STATUS=$?
+set -e
+if [ "$SECRET_STATUS" -eq 1 ] && [ -z "$SECRET_OUT" ] && \
+   ! grep -Fq "$MATRIX_SECRET" "$TMPDIR_SMOKE/matrix-secret.stderr" && [ ! -e "$MATRIX_SENTINEL" ]; then
+  ok "invalid secret-bearing value is sanitized and inert"
+else
+  fail "invalid secret-bearing value leaked or caused an effect"
+fi
+
+jq -n --arg sentinel "$MATRIX_SENTINEL" '
+  {profiles:{codex:{light:{mechanism:"subprocess",model:"fixture-model-alpha",
+    cmd:("codex-stub --prompt {promptfile} --literal $(touch " + $sentinel + ") `touch " + $sentinel + "`")}}}}' > "$MATRIX_PROFILE"
+MALICIOUS_OUT="$(XDG_CONFIG_HOME="$MATRIX_XDG" bash "$RESOLVE_MODEL_SCRIPT" light codex 2>"$TMPDIR_SMOKE/matrix-malicious.stderr")"
+if printf '%s\n' "$MALICIOUS_OUT" | grep -Fq '$(touch ' && \
+   printf '%s\n' "$MALICIOUS_OUT" | grep -Fq '`touch ' && \
+   [ ! -e "$MATRIX_SENTINEL" ] && [ ! -s "$TMPDIR_SMOKE/matrix-malicious.stderr" ]; then
+  ok "substitution and backtick command text remains inert resolver output"
+else
+  fail "resolver executed or altered adversarial command text"
+fi
+
+# Validate raw JSON control bytes, including terminal LF and NUL that shell
+# command substitution would otherwise erase before validation.
+for control in 0 9 10 13 27 31 127; do
+  for position in middle end; do
+    jq -n --argjson control "$control" --arg position "$position" '
+      {light:{mechanism:"subprocess",cmd:("runner --prompt {promptfile}" +
+        ([$control] | implode) + (if $position == "middle" then "second-command" else "" end))}}
+    ' > "$MATRIX_PROFILE"
+    if XDG_CONFIG_HOME="$MATRIX_XDG" bash "$RESOLVE_MODEL_SCRIPT" light codex > "$TMPDIR_SMOKE/control.out" 2> "$TMPDIR_SMOKE/control.err"; then
+      fail "control $control at $position accepted"
+    elif [ ! -s "$TMPDIR_SMOKE/control.out" ] && grep -q '^error=invalid_profile$' "$TMPDIR_SMOKE/control.err"; then
+      ok "control $control at $position rejected before serialization"
+    else
+      fail "control $control at $position produced partial output"
+    fi
+  done
+done
+for field in model mechanism; do
+  jq -n --arg field "$field" '{light:({mechanism:"agent",model:"fixture-model-alpha"} | .[$field] += "\n")}' > "$MATRIX_PROFILE"
+  if XDG_CONFIG_HOME="$MATRIX_XDG" bash "$RESOLVE_MODEL_SCRIPT" light codex > "$TMPDIR_SMOKE/control.out" 2> "$TMPDIR_SMOKE/control.err"; then
+    fail "terminal LF in $field accepted"
+  elif [ ! -s "$TMPDIR_SMOKE/control.out" ]; then
+    ok "terminal LF in $field rejected"
+  else
+    fail "terminal LF in $field produced partial output"
+  fi
+done
+for quoted_cmd in 'runner < "{promptfile}"' "runner --prompt '{promptfile}'"; do
+  jq -n --arg cmd "$quoted_cmd" '{light:{mechanism:"subprocess",cmd:$cmd}}' > "$MATRIX_PROFILE"
+  if quoted_out="$(XDG_CONFIG_HOME="$MATRIX_XDG" bash "$RESOLVE_MODEL_SCRIPT" light codex 2> "$TMPDIR_SMOKE/quoted.err")" &&
+     printf '%s\n' "$quoted_out" | grep -Fqx "cmd=$quoted_cmd"; then
+    ok "quoted legacy promptfile command preserved byte for byte"
+  else
+    fail "quoted legacy promptfile command rejected or changed"
+  fi
+done
+jq -n '{profiles:{"vendor.cli":{light:{mechanism:"agent",model:"literal-cli-model"}},vendor:{cli:{light:{mechanism:"agent",model:"wrong-nested-model"}}}}}' > "$MATRIX_PROFILE"
+if dotted_out="$(XDG_CONFIG_HOME="$MATRIX_XDG" bash "$RESOLVE_MODEL_SCRIPT" light vendor.cli)" &&
+   printf '%s\n' "$dotted_out" | grep -Fqx 'model=literal-cli-model'; then
+  ok "dotted CLI keys are literal, not selector paths"
+else
+  fail "dotted CLI key selected wrong profile"
 fi
 
 # Coordinator scoring function smoke tests

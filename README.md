@@ -17,6 +17,9 @@ Each phase produces plain Markdown artifacts so another runtime can continue wit
 - `hooks/` — session-start and stop hooks for context loading and execution continuation
 - `skills/` — supporting workflow and style guidance
 - `test/` — validation scripts
+- `review/adapter-codex/` — adapter review companion, not automatically installed
+
+`spec/pg219/` is local implementation tracking and is excluded from plugin distribution.
 
 ## Runtime Support
 
@@ -34,15 +37,17 @@ Honest version: this repo is fully usable today, but only Claude-style runtimes 
 
 ## Adaptive Model Router
 
-Spec-Drive supports optional `model:` task metadata using abstract tiers: `light`,
+Spec-Drive accepts optional `model:` task metadata using abstract tiers: `light`,
 `standard`, `advanced`, and `frontier`. The planner assigns tiers with a six-signal heuristic;
 the executor records `model_used:` for completed tasks.
 
 Scope honesty:
 
 - Out of the box, Claude Code agent routing is supported.
-- Codex subprocess routing is supported with concrete public GPT model IDs:
-  `gpt-5.4-mini`, `gpt-5.4`, `gpt-5.5`, and `gpt-5.6-sol`.
+- Codex subprocess defaults are `gpt-5.6-luna` for `light`, `gpt-5.6-sol` for
+  `standard`, and `gpt-6-astra` for both `advanced` and `frontier`.
+- Claude Code uses `haiku`, `sonnet`, and `opus` agent aliases for the first three
+  tiers; `frontier` uses the `opus` subprocess alias with `--effort high`.
 - Coda and the generic default subprocess profiles remain public stubs. They document the profile
   shape, but commands containing `{MODEL}` or `{CMD}` are intentionally rejected by
   `hooks/scripts/resolve-model.sh` until the user supplies a full local override.
@@ -55,47 +60,52 @@ Scope honesty:
   few-shot calibration. The shell suite checks fixture/example consistency; it does not claim to
   deterministically unit-test the LLM's judgment.
 
-Example local override:
+Example scoped local override (in `${XDG_CONFIG_HOME:-~/.config}/spec-drive/profiles.local.json`):
 
 ```json
 {
-  "light": { "mechanism": "subprocess", "cmd": "codex exec -m gpt-5.4-mini -s workspace-write -- < {promptfile}" },
-  "standard": { "mechanism": "subprocess", "cmd": "codex exec -m gpt-5.4 -s workspace-write -- < {promptfile}" },
-  "advanced": { "mechanism": "subprocess", "cmd": "codex exec -m gpt-5.5 -s workspace-write -- < {promptfile}" },
-  "frontier": { "mechanism": "subprocess", "cmd": "codex exec -m gpt-5.6-sol -s workspace-write -- < {promptfile}" }
+  "profiles": {
+    "codex": {
+      "light": { "model": "your-supported-model-id" }
+    }
+  }
 }
 ```
 
-Real subprocess probes confirmed:
+Replace the example ID with one supported by your runtime and account. A model-only
+override requires a compatible base template with a standalone `{MODEL}` argument.
+Complete scoped entries take priority, followed by compatible model-only inheritance,
+legacy global entries, the CLI profile and the default profile. Legacy entries still
+work with a warning; migration is an explicit user choice. See
+[Model Routing](./INSTALL.md#model-routing) for the exact precedence.
 
-- `codex exec -m <model> -s workspace-write -- < {promptfile}` runs successfully for all four mapped Codex tiers above.
-- A Codex subprocess can receive the CLI-neutral implementer contract, implement a canary task, verify it,
-  and end stdout with `TASK_COMPLETE`; the coordinator then re-runs Verify and commits with the exact task message.
-- `claude -p --model claude-opus-4-8 --effort high -- < {promptfile}` runs without error and accepts the
-  effort flag in practice, not only in `--help` output.
-- A Claude frontier subprocess can run the same canary flow and end stdout with `TASK_COMPLETE`; the
-  coordinator owns the commit step.
+Resolve the effective model immediately before dispatch. Historical `model_used:`
+records do not pin future selections. Unknown or absent task tiers inherit; definition
+delegations without a tier use `standard`. A confirmed pre-work model rejection can
+receive at most one retry with the same prompt, unit and template. Uncertain outcomes
+and unreconciled reservations pause for supervised review.
 
-Notes from the live run:
-
-- Subprocess model tiers receive the task prompt via a temporary file (`{promptfile}`).
-- Codex subprocess profiles run under `workspace-write`; executors write task files only and the coordinator owns git commits.
+The shipped model selections are defaults, not proof of availability for your account.
+Historical probes do not establish availability for this candidate. Coda/default stubs
+remain inactive until configured. The adapter at `review/adapter-codex/SKILL.md` is a
+review companion and is not installed by this repository.
 
 ## macOS Compatibility
 
-Spec-Drive is tested on both Linux and macOS via GitHub Actions CI, on every push and pull request.
+The GitHub Actions workflow configures Linux and macOS checks. A configured workflow is not evidence that this candidate passed CI.
 
 All shell scripts avoid GNU-only extensions:
 
 - `readlink -f` replaced with a portable `portable_realpath()` helper (python3 → realpath → cd/pwd -P fallback)
 - `find -mmin` replaced with a portable mtime check (python3 → stat -c %Y on Linux → stat -f %m on macOS)
 
-Prerequisites on macOS: `bash`, `git`, `jq`. Install `jq` via Homebrew (`brew install jq`) if not already present.
+Prerequisites on macOS: `bash`, `git`, `jq`, `python3`. Install `jq` via Homebrew (`brew install jq`) if not already present.
 
 ## Release Notes
 
-- Current release: `v1.4.1` (2026-08-18)
-- `v1.4.1` is test-harness maintenance with no runtime change over `v1.4.0`: macOS path assertions were comparing raw `mktemp -d` output against symlink-resolved resolver output, and a new suite covers a workspace root reached through a symlink.
+- Current source candidate: `v1.4.3` (unreleased). Publication, installation and provider smoke remain pending.
+- `v1.4.3` fixes recovery continuation and legacy command handling and makes local validation self-contained.
+- `v1.4.1` added macOS test-harness fixes without a runtime change over `v1.4.0`.
 - `v1.4.0` adds scoped per-key configuration, atomic project scaffolding, canonical project artifact destinations, and expanded portability/security regression coverage.
 - `v1.3.0` introduced the adaptive model router: optional `model:`/`model_used:` task metadata, abstract routing tiers, and `/spec-drive:implement` dispatch through the model resolver. The `v1.3.1`-`v1.3.4` patches added concrete Codex subprocess model IDs and the CLI-neutral implementer contract, fixed resolver lookup via `${CLAUDE_PLUGIN_ROOT}`, and moved subprocess prompts to a file handoff.
 - `v1.2.1` is a small post-QA polish release: related-spec discovery and conditional PR lifecycle gating.
@@ -103,9 +113,9 @@ Prerequisites on macOS: `bash`, `git`, `jq`. Install `jq` via Homebrew (`brew in
 
 ## Validation Status
 
-- Local shell validation passes with `npm test` on Linux and macOS.
-- The shell test suite is POSIX-friendly and runs on both platforms.
-- CI runs on `ubuntu-latest` and `macos-latest` for every push and pull request.
+- `npm test` runs deterministic Bash/Python tests without sibling files, accounts or network.
+- Release tests create temporary file-copy staging, detect tampering and preserve an isolated XDG fixture.
+- CI is configured for `ubuntu-latest` and `macos-latest`; actual CI and provider results must be recorded separately.
 - This repo does **not** yet ship native install adapters for Codex, Kiro, or Globant Coda.
 - Cross-CLI support today means:
   - portable artifacts
@@ -117,6 +127,7 @@ Prerequisites on macOS: `bash`, `git`, `jq`. Install `jq` via Homebrew (`brew in
 - `bash`
 - `git`
 - `jq`
+- `python3`
 - standard Unix tools: `grep`, `sed`, `find`, `readlink`, `mktemp`
 
 ## Install
@@ -207,7 +218,7 @@ If your runtime cannot execute shell hooks directly, preserve the same behavior 
 - Session start: detect active project and surface state/context
 - Stop: continue execution loop safely, with ambiguity and iteration guards
 
-This is deliberate. The portability claim is about the artifact/protocol design, not about shipping one-click adapters for every CLI.
+The portability claim concerns the artifact/protocol design; manual adapter setup is still required for these runtimes.
 
 ## Project Layout at Runtime
 

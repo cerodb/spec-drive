@@ -1,10 +1,10 @@
 {
   "name": "spec-drive",
-  "version": "1.4.1",
+  "version": "1.4.3",
   "description": "Spec-driven development: idea -> research -> requirements -> design -> tasks -> autonomous execution with quality gates.",
   "license": "MIT",
   "scripts": {
-    "test": "bash test/test-structure.sh && bash test/test-hooks.sh && bash test/test-commands.sh && bash test/test-schema.sh && bash test/test-routing.sh && bash test/test-registrar.sh && bash test/test-public-clean.sh && bash test/test-cross-cli.sh && bash test/test-smoke.sh && bash test/test-macos-pathing.sh",
+    "test": "bash test/test-structure.sh && bash test/test-hooks.sh && bash test/test-commands.sh && bash test/test-schema.sh && bash test/test-routing.sh && bash test/test-registrar.sh && bash test/test-public-clean.sh && bash test/test-cross-cli.sh && bash test/test-smoke.sh && bash test/test-macos-pathing.sh && bash test/test-model-recovery.sh && python3 test/test-recovery-evidence.py && bash test/test-release-models.sh && bash test/test-version-consistency.sh",
     "test:structure": "bash test/test-structure.sh",
     "test:hooks": "bash test/test-hooks.sh",
     "test:commands": "bash test/test-commands.sh",
@@ -14,6 +14,9 @@
     "test:cross-cli": "bash test/test-cross-cli.sh",
     "test:smoke": "bash test/test-smoke.sh",
     "test:public-clean": "bash test/test-public-clean.sh",
-    "test:macos-pathing": "bash test/test-macos-pathing.sh"
+    "test:macos-pathing": "bash test/test-macos-pathing.sh",
+    "test:version-consistency": "bash test/test-version-consistency.sh",
+    "test:model-recovery": "bash test/test-model-recovery.sh && python3 test/test-recovery-evidence.py",
+    "test:release-models": "bash test/test-release-models.sh"
   }
 }

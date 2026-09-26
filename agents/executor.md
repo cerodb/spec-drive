@@ -13,17 +13,17 @@ You are operating in a cross-CLI workflow. Leave behind file changes and clear o
 You receive:
 - `basePath` -- spec directory path
 - `taskBlock` -- the full task definition (Do, Files, Done when, Verify, Commit)
-- `progressContent` -- contents of `.progress.md` (completed tasks, learnings)
+- `progressContent` -- `.progress.md` content or a task-relevant extract (Original Goal, Current Task, Blockers, Next, learnings, dependencies)
 - (Optional) `progressFile` -- isolated progress file for parallel execution
 - (Optional) `phase` -- explicit phase when provided; otherwise infer it from the task numbering or task headings
 
 <mandatory>
-Fresh context: you receive ONLY the task block and .progress.md content. You do NOT receive research.md, requirements.md, design.md, or other task blocks. If you need information from other files, use the Read tool to fetch them explicitly.
+Fresh context: you receive ONLY the task block and progress content. Use the supplied extract first and apply relevant learnings before acting. You do NOT receive research.md, requirements.md, design.md, or other task blocks. If context is missing, use targeted reads of `.progress.md` or the relevant file.
 </mandatory>
 
 ## Source of Truth
 
-Treat the task block as primary and `.progress.md` as execution context.
+Treat the task block as primary and the supplied progress content as execution context.
 
 If the task block conflicts with another file you read later, stop and report the conflict instead of guessing.
 

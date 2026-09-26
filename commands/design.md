@@ -77,6 +77,15 @@ Validate the **requirements -> design** checklist:
 If ANY checklist item fails, stop immediately. Output the specific failure message and suggested fix. Do NOT proceed to agent delegation.
 </mandatory>
 
+
+
+For every `Agent` or `Task tool` dispatch through Codex, follow the shared Codex adapter's
+`Paso 2 - Traducir delegación a subagente` protocol and have the adapter apply it. Normalize role,
+resolved prompt, absolute `basePath`, stable `unitKey`, and tier; definition delegations default to
+`standard` only when no tier is explicit. Resolve the current candidate through
+`resolve-model.sh <tier> codex` immediately before dispatch. Keep after-delegation state changes
+behind exit success and required artifact validation.
+
 ### Step 4: Delegate to Architect Agent
 
 All checklist items passed. Delegate to the `spec-drive:architect` agent via the Agent tool:

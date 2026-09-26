@@ -2,6 +2,10 @@
 
 This file is the operational install guide for `spec-drive`.
 
+This checkout is the **1.4.3 local candidate**. Marketplace commands below do
+not imply that 1.4.3 is published or installed. Provider availability, actual
+package-manager update/reinstall and adapter promotion require separate checks.
+
 Use it when you want concrete setup steps instead of the higher-level overview in `README.md`.
 
 Important install note:
@@ -31,6 +35,7 @@ Install these first:
 - `git`
 - `bash`
 - `jq`
+- `python3` (recovery evidence tests)
 - standard Unix tools: `grep`, `sed`, `find`, `readlink`, `mktemp`
 
 Optional but recommended:
@@ -53,7 +58,8 @@ npm test
 Current validation truth:
 
 - `npm test` is the main checkout validation path today
-- the tests are plain shell scripts and are intended to remain portable
+- tests use Bash and Python 3; they need no sibling checkout, account or network
+- release-copy fixtures use temporary staging and never the real XDG override
 - Codex/Kiro/Coda native installers are not part of this repo yet
 
 Or run the shell checks directly:
@@ -101,6 +107,63 @@ Resolver behavior:
 - a present but invalid scope fails instead of being ignored
 - legacy XDG remains a compatibility fallback
 
+## Model Routing
+
+Spec-Drive accepts four task tiers: `light`, `standard`, `advanced`, and
+`frontier`. A task's explicit `model:` tier is resolved immediately before
+dispatch. A missing or unknown tier keeps the existing inherit behavior.
+Built-in mappings live in `profiles/claude-code.json`, `profiles/codex.json`,
+and `profiles/default.json`; the Coda profile is a subprocess stub.
+The effective model can change between dispatches when the active profile or
+runtime configuration changes. `model_used:` in `tasks.md` is historical
+metadata describing a completed task; it never pins the model for a later run
+and never raises a task's tier.
+
+The authorized 1.4.3 defaults are Codex light `gpt-6-luna`, standard
+`gpt-6-sol`, advanced/frontier `gpt-6-astra`; Claude Code frontier uses
+`opus` (the other Claude tiers retain their existing mappings). Account access
+was validated on the maintainer's Dell environment. This is not evidence that
+the complete adapter pilot or package-manager installation has passed, nor a
+guarantee of availability in another account.
+
+The resolver uses this exact selection order for the requested CLI and tier:
+
+1. A complete local scoped value at
+   `profiles.<cli>.<tier>` wins without consulting lower-priority profiles.
+2. A model-only local scoped value at `profiles.<cli>.<tier>` inherits its
+   mechanism and command from a compatible base, in this order: the local
+   legacy `<tier>` entry, `profiles/<cli>.json`, then
+   `profiles/default.json`. A subprocess base must have a standalone `{MODEL}`
+   argument.
+3. When no scoped value exists, the local legacy `<tier>` entry is selected.
+4. Otherwise the CLI profile `profiles/<cli>.json` is selected.
+5. Otherwise the default profile `profiles/default.json` is selected. If no
+   entry exists, the resolver reports unresolved inheritance.
+
+Absent entries fall through as described. A present invalid selected profile
+fails with an error; it is never silently skipped. A complete scoped value can
+win even if a lower-priority legacy entry is invalid. Legacy global entries
+remain compatible and produce a warning. If you want to convert one, do so
+manually by choosing which CLI-specific value belongs under
+`profiles.<cli>.<tier>` in `profiles.local.json`. The resolver does not copy,
+display, or convert legacy values for you.
+
+### Recovery, partial work, and privacy
+
+Automatic recovery is limited to one retry after a confirmed model rejection
+before work starts. It keeps the same task, tier, CLI, prompt, and dispatch
+unit. A configured replacement is preferred; otherwise the user may choose a
+replacement model. The selected tier entry's `model` value is the only profile
+field updated, and the update preserves other profile values. A second
+rejection, an unclear outcome, or a write/validation conflict stops for manual
+attention. Once work has started, normal attempt limits apply: partial work is
+preserved and the task does not advance until its required artifact passes
+validation.
+
+Recovery state records the effective selection and task identity, not prompt
+contents, raw provider messages, or secrets. Review local profile changes and
+partial artifacts before resuming after a blocked attempt.
+
 Example layout:
 
 ```text
@@ -126,7 +189,7 @@ Preferred direction:
 
 Current status:
 
-- the marketplace path is live and validated
+- the marketplace is the distribution channel; this candidate has not validated its published version
 - the steps below remain the source-repo bootstrap path
 
 This repo already contains Claude-style plugin metadata:
@@ -157,6 +220,23 @@ Do not present this temporary source-repo path as equivalent to a polished marke
 ## Codex Installation
 
 There is no native Codex installer in this repo yet.
+
+`review/adapter-codex/SKILL.md` is the full Codex companion distributed alongside
+the core; it is installed separately. Merely unpacking this source does not replace
+an installed skill. `spec/pg219/` is local tracking and is excluded from distribution.
+
+For a separately installed companion, set `SPEC_DRIVE_DIR` to the absolute root
+of the selected core (containing `commands/`, `agents/`, and `hooks/`) in its
+execution environment. The companion validates that directory before use.
+It does not select a version from runtime caches. Its old relative-layout fallback
+is used only when no explicit path is set and a valid core exists there.
+
+For an isolated pilot, open a fresh session in a disposable project, ask it to read
+this candidate companion by its path, and set `SPEC_DRIVE_TEST_CORE` to the absolute
+candidate checkout root for that session. This takes precedence over `SPEC_DRIVE_DIR`.
+Use a separate temporary XDG configuration for test overrides. Keep the stable
+skill, stable plugin and normal user overrides intact. Record the resolved core
+path/version and actual results before claiming the pilot passed.
 
 Use `spec-drive` as a workflow pack:
 
@@ -210,6 +290,9 @@ Recommended approach:
 Treat both Kiro and Coda support as manual adapter ports, not native packaged installs.
 
 ## Available Commands
+
+The source prompts for task planning and implementation are
+`commands/tasks.md` and `commands/implement.md`.
 
 After installation, the following commands are available:
 

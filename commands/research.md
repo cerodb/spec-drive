@@ -86,6 +86,15 @@ Parse the coordinator output. Three outcomes matter for this command:
    ```
    Do NOT delegate to the researcher in these cases.
 
+
+
+For every `Agent` or `Task tool` dispatch through Codex, follow the shared Codex adapter's
+`Paso 2 - Traducir delegación a subagente` protocol and have the adapter apply it. Normalize role,
+resolved prompt, absolute `basePath`, stable `unitKey`, and tier; definition delegations default to
+`standard` only when no tier is explicit. Resolve the current candidate through
+`resolve-model.sh <tier> codex` immediately before dispatch. Keep after-delegation state changes
+behind exit success and required artifact validation.
+
 ## Delegate to Researcher
 
 <mandatory>

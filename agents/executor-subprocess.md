@@ -14,12 +14,12 @@ The prompt includes:
 
 - `basePath` -- spec directory path
 - `Task Block` -- the full task definition, including Do, Files, Done when, Verify, and Commit fields
-- `Progress` -- current `.progress.md` content
+- `Progress` -- `.progress.md` content or a task-relevant extract (Original Goal, Current Task, Blockers, Next, learnings, dependencies)
 - optional `progressFile` -- isolated progress file for parallel execution
 
 ## Source of Truth
 
-Treat the task block as primary and the progress content as execution context.
+Treat the task block as primary and the supplied progress content as execution context. Apply relevant learnings before acting. If context is missing, use targeted reads of `.progress.md` or the relevant file before editing.
 
 If the task block conflicts with files you inspect later, stop and report `TASK_BLOCKED: conflicting source of truth`.
 

@@ -1,5 +1,50 @@
 # Changelog
 
+## v1.4.3 — Unreleased
+
+Local candidate; publication, installation and provider validation remain pending.
+
+- Preserve quoted legacy prompt-file commands; reject control characters before
+  line-based resolver output and use literal CLI keys.
+- Pause automatic continuation for unreconciled retry reservations or invalid
+  state, preserving legacy states without recovery metadata.
+- Clarify replacement invariants and supervised reconciliation; validate captured
+  recovery evidence against actual files instead of declared booleans.
+- Make staging and recovery regressions self-contained. Check all runtime
+  directories, update/fresh reinstall copies, XDG preservation and tampering.
+- Keep the four tiers; update Codex defaults to `gpt-5.6-luna` (light),
+  `gpt-5.6-sol` (standard), and `gpt-6-astra` (advanced/frontier). Claude frontier
+  uses the `opus` alias and preserves `--effort high`; other Claude tiers are unchanged.
+  Existing scoped and legacy overrides still take precedence. These changes do not
+  establish model availability for a user's account.
+
+## v1.4.2 — 2026-09-25
+
+Model-routing candidate with scoped overrides, compatible model-only inheritance
+and bounded pre-work rejection recovery. The four tiers remain unchanged;
+resolver and coordinator behavior changed. This entry describes candidate work,
+not proof of a published or installed release.
+
+### Documented
+
+- Exact per-key selection order: a complete CLI-and-tier local override, a
+  compatible base plus model-only partial override, a legacy global tier
+  override, the CLI profile, then the default profile. A present invalid
+  selected value fails; absent values fall through. Unknown or absent tiers
+  inherit without probing profiles.
+- The effective model is resolved immediately before each dispatch from the
+  task's explicit tier. Historical `model_used` records what ran previously;
+  it never pins or raises the model for later dispatches.
+- Legacy global overrides remain usable with a warning. Conversion is a
+  manual choice by the user; Spec-Drive does not copy or transform values.
+- Model-rejection recovery is bounded, preserves partial work and unrelated
+  profile values, and excludes prompts, provider messages, and secrets from
+  persisted diagnostics.
+- Release staging distinguishes local source/package/install fixtures from
+  actual runtime smoke evidence and marketplace publication.
+
+No experimental local model override or private execution evidence is included.
+
 ## v1.4.1 — 2026-08-18
 
 Test-harness maintenance. **No runtime change.**

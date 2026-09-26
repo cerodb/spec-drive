@@ -50,6 +50,45 @@ assert_runtime_config_status() {
   fi
 }
 
+assert_state_recovery_status() {
+  local path="$1"
+  local expected_status="$2"
+  local label="$3"
+  local output status
+
+  set +e
+  output="$(jq -ne --slurpfile schema "$SCHEMA" --slurpfile state "$path" '
+    def episode_valid($e):
+      ($e | type == "object") and
+      ($e.unitKey | type == "string" and length > 0) and
+      ($e.selectionFingerprint | type == "string" and test("^[a-f0-9]{64}$")) and
+      ([$schema[0].["$defs"].modelRecoveryEpisode.properties.status.enum[]] | index($e.status) != null) and
+      ($e.choiceQueries | type == "number" and floor == . and . >= 0 and . <= 1) and
+      ($e.retryReservations | type == "number" and floor == . and . >= 0 and . <= 1) and
+      (($e | keys) - ($schema[0].["$defs"].modelRecoveryEpisode.properties | keys)) == [] and
+      (($schema[0].["$defs"].modelRecoveryEpisode.required - ($e | keys)) == []);
+    ($state[0].name | type == "string") and
+    ($state[0].basePath | type == "string") and
+    ([$schema[0].properties.phase.enum[]] | index($state[0].phase) != null) and
+    (($state[0] | has("modelRecovery") | not) or
+      (($state[0].modelRecovery | type == "object") and
+       ($state[0].modelRecovery.episodes | type == "object") and
+       (($state[0].modelRecovery | keys) - ["episodes"] == []) and
+       ([$state[0].modelRecovery.episodes[]] | all(.[]; episode_valid(.)))))
+  ' 2>&1)"
+  status=$?
+  set -e
+
+  if [ "$status" -eq "$expected_status" ]; then
+    ok "$label"
+  else
+    fail "$label (expected exit $expected_status, got $status)"
+    if [ -n "$output" ]; then
+      printf '    %s\n' "$output"
+    fi
+  fi
+}
+
 echo "=== Spec-Drive Schema Test ==="
 
 # 1. Schema is valid JSON
@@ -340,6 +379,19 @@ cat >"$TMP_CONFIG_DIR/legacy-invalid-cli-type.json" <<'EOF'
 {"cli":42}
 EOF
 
+cat >"$TMP_CONFIG_DIR/state-legacy.json" <<'EOF'
+{"name":"legacy","basePath":"/tmp/legacy/spec","phase":"execution"}
+EOF
+cat >"$TMP_CONFIG_DIR/state-recovery-valid.json" <<'EOF'
+{"name":"current","basePath":"/tmp/current/spec","phase":"execution","modelRecovery":{"episodes":{"task-hash":{"unitKey":"task:2:abc","selectionFingerprint":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","status":"awaiting_choice","choiceQueries":1,"retryReservations":0}}}}
+EOF
+cat >"$TMP_CONFIG_DIR/state-recovery-invalid-limit.json" <<'EOF'
+{"name":"invalid","basePath":"/tmp/invalid/spec","phase":"execution","modelRecovery":{"episodes":{"task-hash":{"unitKey":"task:2:abc","selectionFingerprint":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","status":"awaiting_choice","choiceQueries":2,"retryReservations":0}}}}
+EOF
+cat >"$TMP_CONFIG_DIR/state-recovery-invalid-status.json" <<'EOF'
+{"name":"invalid","basePath":"/tmp/invalid/spec","phase":"execution","modelRecovery":{"episodes":{"task-hash":{"unitKey":"task:2:abc","selectionFingerprint":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","status":"reset","choiceQueries":0,"retryReservations":0}}}}
+EOF
+
 cat >"$TMP_CONFIG_DIR/workspace-valid.json" <<EOF
 {"scope":"workspace","workspaceRoot":"$WORKSPACE_ROOT","projectsPath":"Projects","cli":"codex"}
 EOF
@@ -387,6 +439,10 @@ else
 fi
 
 echo "-- jq-based runtime validator enforcement..."
+assert_state_recovery_status "$TMP_CONFIG_DIR/state-legacy.json" 0 "state schema accepts legacy state without modelRecovery"
+assert_state_recovery_status "$TMP_CONFIG_DIR/state-recovery-valid.json" 0 "state schema accepts bounded optional modelRecovery episode"
+assert_state_recovery_status "$TMP_CONFIG_DIR/state-recovery-invalid-limit.json" 1 "state schema rejects modelRecovery query count above one"
+assert_state_recovery_status "$TMP_CONFIG_DIR/state-recovery-invalid-status.json" 1 "state schema rejects unknown modelRecovery episode status"
 assert_runtime_config_status "$TMP_CONFIG_DIR/project-valid.json" 0 "runtime accepts scoped project config with portable override"
 assert_runtime_config_status "$TMP_CONFIG_DIR/workspace-valid.json" 0 "runtime accepts scoped workspace config"
 assert_runtime_config_status "$TMP_CONFIG_DIR/workspace-valid-flat.json" 0 "runtime accepts projectsPath='.' for flat workspaces"
