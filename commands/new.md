@@ -21,6 +21,22 @@ Example: /spec-drive:new my-api Build a REST API for user management
 ```
 Stop and wait for user input.
 
+## Recover Input and Resolve Local Identity Before Mutation
+
+The command is an agent-facing protocol, not a reason to make the user repeat
+their request. If malformed quoting or a single text block has an unambiguous,
+explicitly supplied name and goal, normalize the invocation while preserving the
+goal and flags. Never turn an arbitrary description into an invented slug.
+If there are multiple plausible interpretations, ask one concise question and
+wait before resolving paths or creating files. Retain the information already given.
+
+Apply the active workspace's naming and project-identity conventions before the
+scaffold. Use an already authorized full slug, including any locally required
+prefix. If identity or reuse of an existing project is unclear, ask before writing;
+do not create a short-name project intending to rename it afterward. Local registry
+lookup/registration belongs to the authorized local agent workflow, not this
+generic plugin; do not hardcode a registry, numbering scheme or database here.
+
 ## Validate Project Name
 
 <mandatory>
@@ -35,6 +51,8 @@ Invalid project name: "<name>"
 Names must contain only letters, numbers, hyphens, underscores, and dots.
 No slashes, spaces, or path traversal (../) allowed.
 ```
+Stop filesystem actions, retain the goal, and ask for a safe name. Do not silently
+sanitize unsafe names or bypass the scaffold's validation.
 </mandatory>
 
 ## Collect Missing Goal Before Mutation
@@ -52,11 +70,21 @@ Do not resolve the projects container or call the scaffold until every required 
 
 ## Resolve Projects Container
 
-Resolve the configured projects container through the shared resolver:
+Resolve the configured projects container through the shared resolver. Run this
+block from the user's workspace, with `SPEC_DRIVE_PLUGIN_ROOT` set to the absolute
+path of the selected plugin core (not a guessed installation). Explicit Bash is required even
+when the caller uses zsh; a shebang does not select the shell when sourcing.
+Pass paths as positional arguments, never interpolate user input into shell code:
 
 ```bash
-. hooks/scripts/resolve-config.sh
-PROJECTS_CONTAINER="$(spec_drive_resolve_projects_container "$PWD")"
+if PROJECTS_CONTAINER="$(bash -c '
+  . "$1"
+  spec_drive_resolve_projects_container "$2"
+' spec-drive-resolve "$SPEC_DRIVE_PLUGIN_ROOT/hooks/scripts/resolve-config.sh" "$PWD")"; then
+  :
+else
+  exit "$?"
+fi
 ```
 
 If the resolver exits non-zero, stop and surface its stderr unchanged.
@@ -69,7 +97,7 @@ Invoke the executable scaffold and capture the published project path from stdou
 PROJECT_PATH=""
 CREATE_PROJECT_STDERR="$(mktemp)"
 set +e
-PROJECT_PATH="$(bash hooks/scripts/create-project.sh \
+PROJECT_PATH="$(bash "$SPEC_DRIVE_PLUGIN_ROOT/hooks/scripts/create-project.sh" \
   --projects-container "$PROJECTS_CONTAINER" \
   --project-slug "$name" \
   --goal "$goal" \

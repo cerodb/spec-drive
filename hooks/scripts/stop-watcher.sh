@@ -258,9 +258,9 @@ Path: $SPEC_PATH | Index: $TASK_INDEX | Iteration: $TASK_ITERATION/$MAX_TASK_ITE
 
 ## Resume
 1. Read $SPEC_PATH/.spec-drive-state.json and $SPEC_PATH/tasks.md
-2. Delegate task $TASK_INDEX to executor (or qa-engineer for [VERIFY])
-3. On TASK_COMPLETE: update state, advance
-4. If taskIndex >= totalTasks: output ALL_TASKS_COMPLETE
+2. Follow /spec-drive:implement Step 5: select the first pending numbered task in the full list, not a stored index into pending tasks; reconcile unresolved recovery before dispatch
+3. On TASK_COMPLETE: coordinator independently re-runs Verify, commits declared files, then updates tracking/state
+4. Output ALL_TASKS_COMPLETE only after checking that every numbered task is completed and no unresolved work remains
 
 ## Critical
 - Delegate via Task tool — do NOT implement yourself

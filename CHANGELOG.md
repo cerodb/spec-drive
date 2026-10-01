@@ -1,5 +1,20 @@
 # Changelog
 
+## v1.4.4 — 2026-10-01
+
+- Select the first pending numbered task using its position in the complete task
+  list; reconcile stale cursors on resume and stop for ambiguous recovery instead
+  of skipping work. Record success against the completed task's index.
+- Align execution and continuation instructions: executors implement and verify;
+  the coordinator independently verifies and owns local commits and tracking.
+- Recover unambiguous malformed project input, ask before ambiguous mutations,
+  and resolve local naming conventions before scaffolding without registry coupling.
+- Invoke config resolution in explicit Bash, reject unsupported direct sourcing,
+  and distinguish dependency/I/O failures from malformed JSON.
+- Add focused selection and invocation regressions, including non-Bash shells
+  and canonical-path expectations on macOS. No new dependencies, state fields,
+  model defaults or automatic migrations.
+
 ## v1.4.3 — 2026-09-26
 
 Source release with separate marketplace distribution and Codex adapter setup.

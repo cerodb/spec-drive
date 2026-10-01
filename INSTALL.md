@@ -2,7 +2,7 @@
 
 This file is the operational install guide for `spec-drive`.
 
-This guide covers **1.4.3**. Use the
+This guide covers **1.4.4**. Use the
 [marketplace installation instructions](https://github.com/cerodb/cerodb-plugins#installation)
 for distribution, and [cerodb/spec-drive](https://github.com/cerodb/spec-drive)
 for source, issues and releases. Verify the installed version after each manager
@@ -121,7 +121,7 @@ runtime configuration changes. `model_used:` in `tasks.md` is historical
 metadata describing a completed task; it never pins the model for a later run
 and never raises a task's tier.
 
-The authorized 1.4.3 defaults are Codex light `gpt-5.6-luna`, standard
+The defaults retained from 1.4.3 are Codex light `gpt-5.6-luna`, standard
 `gpt-5.6-sol`, advanced/frontier `gpt-6-astra`; Claude Code frontier uses
 `opus` (the other Claude tiers retain their existing mappings). Account access
 was validated on the maintainer's account on 2026-09-26. This is not evidence that

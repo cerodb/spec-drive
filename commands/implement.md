@@ -38,8 +38,8 @@ Set `basePath` to the directory containing `.spec-drive-state.json`.
 
 Read `{basePath}/.spec-drive-state.json`. Parse:
 - `phase` -- if not "tasks" or "execution", reject
-- `taskIndex` -- current task position (0-based)
-- `totalTasks` -- total task count
+- `taskIndex` -- current task position in the full task list (0-based, including completed tasks)
+- `totalTasks` -- full task count (completed + pending)
 - `taskIteration` -- retry count for current task
 - `maxTaskIterations` -- max retries per task (default: 5)
 - `globalIteration` -- total loop iterations
@@ -87,11 +87,11 @@ If ANY checklist item fails, stop immediately. Do NOT proceed to execution.
 
 If `phase` is "tasks" (first run):
 
-1. Count total tasks: count all lines matching `^- \[ \]` in tasks.md
-2. If count is 0, stop with error: "No unchecked tasks found in tasks.md. Nothing to execute."
+1. Count all numbered task entries, completed and pending, in document order. Do not count nested acceptance-criteria checkboxes.
+2. If no pending numbered tasks remain, stop with error: "No unchecked tasks found in tasks.md. Nothing to execute."
 3. Update state:
    - `phase` = `"execution"`
-   - `taskIndex` = `0`
+   - `taskIndex` = position of the first pending task in the full list
    - `totalTasks` = counted value
    - `taskIteration` = `1`
    - `globalIteration` = `1`
@@ -99,21 +99,27 @@ If `phase` is "tasks" (first run):
 4. Write updated state to `.spec-drive-state.json`
 
 If `phase` is already "execution" (resuming):
-1. Recount unchecked tasks from tasks.md
-2. If the count differs from `totalTasks` in state, update `totalTasks` and warn:
-   "tasks.md was modified since last run. totalTasks updated: {old} → {new}"
-3. Use updated state values.
+1. Re-read all numbered tasks, including completed tasks. Reconcile `totalTasks` and `taskIndex` using Step 5, not the stored index into a shrinking pending list.
+2. Preserve retry counters, task results and recovery evidence. If reconciliation changes the selected task while a retry, recovery episode or parallel group is unresolved, STOP for supervised reconciliation; never transfer that evidence to another task or authorize another dispatch.
+3. Existing projects need no new fields or migration. Do not reinterpret historical `taskResults` as proof of completion. If checkboxes conflict with recorded work or the task order was edited during execution, STOP and ask rather than guessing.
 
 ### Step 5: Parse Current Task
 
-Read `{basePath}/tasks.md`. Extract the task block at position `taskIndex`:
+Read `{basePath}/tasks.md` and select the first pending numbered task in document order. Never apply an advancing index to a filtered list of pending tasks.
 
-1. Find all unchecked task lines matching `- [ ] X.Y`
-2. Index to `taskIndex` (0-based)
-3. Extract the full task block: the task line plus all indented content below it until the next task line or end of file
-4. Parse the block to extract: Do, Files, Done when, Verify, Commit fields
+1. Build `tasks` from all numbered task entries (`- [ ] X.Y` and `- [x] X.Y`, also accepting `[X]`), including completed tasks. Ignore checkboxes inside task blocks.
+2. Apply this selection rule on first invocation, every loop and resume (`completed` is the checkbox value):
 
-If `taskIndex >= totalTasks`, go to Step 9 (all tasks complete).
+```python
+# Task selection reference: tasks contains every numbered task in document order.
+totalTasks = len(tasks)
+taskIndex = next((i for i, task in enumerate(tasks) if not task["completed"]), totalTasks)
+```
+
+3. If there are no numbered tasks, STOP: a missing/empty plan is not successful completion. If no pending task remains, go to Step 9 only after any unresolved work/recovery has been reconciled.
+4. Extract the selected task's full block and parse Do, Files, Done when, Verify and Commit. Preserve this task's full-list index for result recording before selecting another task.
+
+Do not reset retry counters just because selection is recomputed. Normal successful tracking determines completion; ambiguous interrupted tracking requires human reconciliation.
 
 ### Step 6: Coordinator Pre-flight and Dispatch
 
@@ -335,7 +341,7 @@ Progress:
 
 When the current task has a `[P]` marker:
 
-1. Collect all consecutive `[P]` tasks starting from the current taskIndex
+1. Collect consecutive pending `[P]` tasks starting from the current taskIndex in the full list; stop at a completed or non-parallel task
 2. Determine batch size (respect `maxConcurrency` from config, default: 2)
 3. For each task in the batch, delegate to `spec-drive:executor` via Task tool with an isolated `progressFile`:
    - prepare that unit's `progressContext`
@@ -371,7 +377,7 @@ When the current task has a `[P]` marker:
    - update that task's checkbox / `model_used:` field and merge its isolated progress notes
 6. After ALL parallel tasks complete and their implementation commits succeed, commit the merged tracking update separately
 7. Clear `parallelGroup` from state
-8. Advance `taskIndex` past the entire batch
+8. Recompute `taskIndex` with Step 5 after the batch's tracking is committed; never advance twice via Step 7
 
 ### Step 7: Handle Executor Result and Own Git
 
@@ -413,15 +419,15 @@ The coordinator must perform the trusted post-processing. Do not trust the execu
    git add {basePath}/tasks.md {basePath}/<progressFile or .progress.md>
    git commit -m "chore(spec-drive): update progress for task <task-id>"
    ```
-10. Advance `taskIndex` by 1 (or by batch size for parallel)
+10. Preserve the completed task's full-list index as `completedTaskIndex` for result recording
 11. Reset `taskIteration` to 1
 12. Increment `globalIteration` by 1
 13. Record success in `taskResults`:
    ```json
-   { "<taskIndex>": { "status": "success" } }
+   { "<completedTaskIndex>": { "status": "success" } }
    ```
-14. Write updated state to `.spec-drive-state.json`
-14. Loop back to Step 5 for the next task
+14. Recompute `taskIndex` with Step 5 and write updated state to `.spec-drive-state.json`
+15. Loop back to Step 5 for the next task
 
 #### On TASK_BLOCKED / Failure (or VERIFICATION_FAIL)
 
@@ -461,12 +467,12 @@ The coordinator must perform the trusted post-processing. Do not trust the execu
 
 After processing the current task result, check if there are more tasks:
 
-- If `taskIndex < totalTasks`: loop back to Step 5
-- If `taskIndex >= totalTasks`: proceed to Step 9
+- Re-read the full task list using Step 5; if any pending task remains, continue with it.
+- Only if every numbered task is completed and no unresolved work remains, proceed to Step 9. A stored index alone never proves completion.
 
 ### Step 9: All Tasks Complete
 
-When `taskIndex >= totalTasks`:
+When Step 5 confirms a nonempty task list with every numbered task completed and no unresolved work:
 
 1. Output:
    ```
@@ -491,12 +497,13 @@ The coordinator writes state after every significant event (task completion, fai
 ## Constraints
 
 <mandatory>
-- NEVER read project source files (only tasks.md, .progress.md, state file)
-- NEVER run git commands (add, commit, push) -- that is the executor's job
+- Read task/state/progress files and the declared artifacts needed for trusted verification; avoid unrelated source exploration
+- The coordinator owns task-scoped git staging, commits and tracking/state updates; executors MUST NOT perform them
+- Local commit ownership does not authorize push, publication or unrelated git changes
 - NEVER write application code -- that is the executor's job
-- NEVER run verification commands -- that is the executor's or qa-engineer's job
+- Executors implement and run Verify; the coordinator MUST independently re-run Verify before committing or marking completion
 - NEVER make implementation decisions -- delegate and let the agent decide
-- ONLY orchestrate: read state, parse task, delegate, update state
+- ONLY orchestrate: select task, delegate, verify, commit and update tracking/state; never implement application code
 </mandatory>
 
 ## Error Handling

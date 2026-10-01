@@ -44,6 +44,9 @@ COMMANDS=(new research requirements design tasks implement status cancel help li
 
 echo "=== Spec-Drive Commands Test ==="
 
+python3 test/test-task-selection.py
+python3 test/test-new-invocation.py
+
 for cmd in "${COMMANDS[@]}"; do
   FILE="commands/$cmd.md"
   echo "-- Checking $FILE..."

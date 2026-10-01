@@ -1,6 +1,11 @@
 # Releasing Spec-Drive
 
-## Release 1.4.3
+## Release 1.4.4
+
+This release preserves the 1.4.3 model defaults and
+Codex companion. Changes are limited to task selection/resume, execution ownership,
+project-creation instructions, Bash invocation/diagnostics and regression tests.
+Validation of this patch does not establish new provider or installation results.
 
 The canonical source, issue tracker and releases are maintained in
 [cerodb/spec-drive](https://github.com/cerodb/spec-drive). Distribution and

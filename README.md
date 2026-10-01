@@ -107,8 +107,8 @@ Prerequisites on macOS: `bash`, `git`, `jq`, `python3`. Install `jq` via Homebre
 
 ## Release Notes
 
-- Current release: `v1.4.3` (2026-09-26). See [release details](https://github.com/cerodb/spec-drive/releases/tag/v1.4.3).
-- `v1.4.3` fixes recovery continuation and legacy command handling and makes local validation self-contained.
+- Current release: `v1.4.4` (2026-10-01). See [release details](https://github.com/cerodb/spec-drive/releases/tag/v1.4.4).
+- `v1.4.4` corrects task selection/resume and execution ownership, and improves project creation and explicit Bash invocation.
 - `v1.4.1` added macOS test-harness fixes without a runtime change over `v1.4.0`.
 - `v1.4.0` adds scoped per-key configuration, atomic project scaffolding, canonical project artifact destinations, and expanded portability/security regression coverage.
 - `v1.3.0` introduced the adaptive model router: optional `model:`/`model_used:` task metadata, abstract routing tiers, and `/spec-drive:implement` dispatch through the model resolver. The `v1.3.1`-`v1.3.4` patches added concrete Codex subprocess model IDs and the CLI-neutral implementer contract, fixed resolver lookup via `${CLAUDE_PLUGIN_ROOT}`, and moved subprocess prompts to a file handoff.

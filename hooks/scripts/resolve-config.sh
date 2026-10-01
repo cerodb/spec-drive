@@ -5,6 +5,13 @@
 # 2. nearest ancestor config with explicit scope: workspace, or legacy unscoped
 # 3. legacy XDG config at ${XDG_CONFIG_HOME:-$HOME/.config}/spec-drive/config.json
 
+# Sourcing ignores the shebang. Fail before Bash-only code or special-variable
+# assignments can damage another shell's command lookup.
+if [ -z "${BASH_VERSION:-}" ]; then
+    printf '%s\n' 'Spec-Drive resolver requires Bash; invoke it with bash -c, not source in another shell.' >&2
+    return 3 2>/dev/null || exit 3
+fi
+
 set -euo pipefail
 
 # portable_realpath — resolve absolute canonical path without GNU readlink -f.
@@ -74,8 +81,25 @@ spec_drive_validate_config_file() {
     local path="$1"
     local scope project_slug workspace_root projects_path project_root container
 
-    if ! jq empty "$path" >/dev/null 2>&1; then
-        spec_drive_config_error "$path" "invalid JSON"
+    if ! command -v jq >/dev/null 2>&1; then
+        printf '%s\n' 'Spec-Drive resolver environment error: jq is required but unavailable.' >&2
+        return 3
+    fi
+    if [ ! -f "$path" ] || [ ! -r "$path" ]; then
+        printf 'Spec-Drive config I/O error: cannot read file: %s\n' "$path" >&2
+        return 3
+    fi
+    local json_status
+    if jq empty "$path" >/dev/null 2>&1; then
+        :
+    else
+        json_status=$?
+        # jq versions report malformed input as 4 or 5 for `jq empty`.
+        if [ "$json_status" -eq 4 ] || [ "$json_status" -eq 5 ]; then
+            spec_drive_config_error "$path" "invalid JSON"
+        else
+            printf 'Spec-Drive resolver environment/I/O error: jq failed (exit %s) reading %s\n' "$json_status" "$path" >&2
+        fi
         return 3
     fi
     if ! jq -e 'type == "object"' "$path" >/dev/null 2>&1; then
