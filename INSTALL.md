@@ -2,7 +2,8 @@
 
 This file is the operational install guide for `spec-drive`.
 
-This guide covers **1.4.4**. Use the
+This guide covers **1.4.6**. The preserved 1.4.5 candidate was not published
+separately; its initialization fixes are included in 1.4.6. Use the
 [marketplace installation instructions](https://github.com/cerodb/cerodb-plugins#installation)
 for distribution, and [cerodb/spec-drive](https://github.com/cerodb/spec-drive)
 for source, issues and releases. Verify the installed version after each manager

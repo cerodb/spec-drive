@@ -372,8 +372,8 @@ if [ -f "$NEW_FILE" ]; then
     fail "new command missing scaffold-before-research contract"
   fi
 
-  if grep -q 'Recovery: open the created project and run /spec-drive:research' "$NEW_FILE"; then
-    ok "new command documents recovery after post-scaffold research failure"
+  if grep -q 'Do not redelegate' "$NEW_FILE"; then
+    ok "new command inspects uncertain research failure before redelegation"
   else
     fail "new command missing post-scaffold research recovery guidance"
   fi
@@ -407,25 +407,30 @@ if [ -f "$NEW_FILE" ]; then
     fail "new command should delegate research after scaffold invocation"
   fi
 
-  STATUS_LINE="$(grep -n 'CREATE_PROJECT_STATUS=\$?' "$NEW_FILE" | head -n1 | cut -d: -f1)"
-  SET_PLUS_E_LINE="$(grep -n 'set +e' "$NEW_FILE" | head -n1 | cut -d: -f1)"
-  SET_MINUS_E_LINE="$(grep -n 'set -e' "$NEW_FILE" | head -n1 | cut -d: -f1)"
-  EXIT2_LINE="$(grep -n '\[ "\$CREATE_PROJECT_STATUS" -eq 2 \]' "$NEW_FILE" | head -n1 | cut -d: -f1)"
-  NONZERO_LINE="$(grep -n '\[ "\$CREATE_PROJECT_STATUS" -ne 0 \]' "$NEW_FILE" | head -n1 | cut -d: -f1)"
-  SPEC_PATH_LINE="$(grep -n 'SPEC_PATH="\$PROJECT_PATH/spec"' "$NEW_FILE" | head -n1 | cut -d: -f1)"
-
-  if [ -n "$SET_PLUS_E_LINE" ] && [ -n "$STATUS_LINE" ] && [ -n "$SET_MINUS_E_LINE" ] && [ -n "$EXIT2_LINE" ] && [ -n "$NONZERO_LINE" ] && [ -n "$SPEC_PATH_LINE" ] \
-    && [ "$SET_PLUS_E_LINE" -lt "$SCAFFOLD_LINE" ] \
-    && [ "$SCAFFOLD_LINE" -lt "$STATUS_LINE" ] \
-    && [ "$STATUS_LINE" -lt "$SET_MINUS_E_LINE" ] \
-    && [ "$SET_MINUS_E_LINE" -lt "$EXIT2_LINE" ] \
-    && [ "$STATUS_LINE" -lt "$EXIT2_LINE" ] \
-    && [ "$EXIT2_LINE" -lt "$NONZERO_LINE" ] \
-    && [ "$NONZERO_LINE" -lt "$SPEC_PATH_LINE" ]; then
-    ok "new command captures scaffold status and branches before deriving SPEC_PATH"
-  else
-    fail "new command must capture scaffold status, distinguish exit 2, and branch before SPEC_PATH"
-  fi
+  assert_contains "$NEW_FILE" 'result-format json' "new requests structured ScaffoldResult"
+  assert_contains "$NEW_FILE" 'Invalid ScaffoldResult' "new rejects malformed scaffold output"
+  assert_contains "$NEW_FILE" 'NEW_ACTION=research' "new gates delegation on routing result"
+  assert_contains "$NEW_FILE" 'tasks\|execution\) NEXT_COMMAND=/spec-drive:implement' "new routes execution to implement"
+  assert_contains "$NEW_FILE" 'completed\) NEW_ACTION=report' "new reports completed without dispatch"
+  assert_contains "$NEW_FILE" 'never write state or automatically delegate any phase' "new resumes without mutation or delegation"
+  assert_contains "$NEW_FILE" 'Research output-path conflict' "new preserves existing background research"
+  assert_contains "$NEW_FILE" '^## Agent Recovery' "new defines common agent recovery"
+  assert_contains "$NEW_FILE" 'stop filesystem mutations and' "new defines stop as mutation and dispatch stop"
+  assert_contains "$NEW_FILE" 'exactly one concise question' "new asks one question per unresolved decision"
+  assert_contains "$NEW_FILE" 'recommended safe action' "new presents a recommended safe action"
+  assert_contains "$NEW_FILE" 'never invent stdout' "new does not promise unavailable stdout bytes"
+  assert_contains "$NEW_FILE" 'the decision pending' "new preserves an unanswered decision"
+  assert_contains "$NEW_FILE" 'do not ask it again without new evidence' "new does not repeat the same question without evidence"
+  assert_contains "$NEW_FILE" 'evidence that the cause was' "new requires evidence that retry cause was resolved"
+  assert_contains "$NEW_FILE" 'explicit decision authorizing a supervised retry' "new permits only explicitly supervised unresolved retry"
+  assert_contains "$NEW_FILE" 'a retry loop' "new forbids retry loops"
+  assert_contains "$NEW_FILE" 'reread the actual state and' "new rereads state before resuming"
+  assert_contains "$NEW_FILE" 'Do not reinitialize.*blindly repeat|Do not reinitialize' "new forbids reset and blind retry"
+  assert_contains "$NEW_FILE" 'resolver failures.*non-zero scaffold exit' "new routes resolver and scaffold failures to recovery"
+  assert_contains "$NEW_FILE" 'ScaffoldResult.*structured scaffold conflict' "new routes contract and conflict failures to recovery"
+  assert_contains "$NEW_FILE" 'state changed since the result' "new routes concurrent state changes to recovery"
+  assert_contains "$NEW_FILE" 'existing.*research\.md' "new routes existing research to recovery"
+  assert_contains "$NEW_FILE" 'researcher failure \(including uncertain partial' "new routes researcher ambiguity to recovery"
 else
   fail "commands/new.md does not exist"
 fi

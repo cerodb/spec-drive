@@ -107,7 +107,19 @@ Prerequisites on macOS: `bash`, `git`, `jq`, `python3`. Install `jq` via Homebre
 
 ## Release Notes
 
-- Current release: `v1.4.4` (2026-10-01). See [release details](https://github.com/cerodb/spec-drive/releases/tag/v1.4.4).
+- Current release: `v1.4.6`. It retains the unpublished `v1.4.5`
+  initialization fixes and adds a shared recovery protocol to `/spec-drive:new`.
+  Resolver, scaffold, routing and researcher failures stop mutations and dependent
+  dispatches, then return control to the calling agent for read-only inspection.
+  The agent applies only an unequivocal, safe, already-authorized resolution;
+  otherwise it asks the human one contextual question with a concrete
+  recommendation. Without an answer the decision remains pending. Resumption
+  rereads actual state and artifacts, preserving completed work without
+  reinitialization or blind retries. Scaffold protections, model recovery, defaults
+  and the Codex companion are unchanged from the preceding candidate.
+  Tests cover shell behavior and instruction contracts, not conversational model E2E.
+- Previous source candidate: `v1.4.5` remains unreleased and unpublished.
+- Release details: [v1.4.6](https://github.com/cerodb/spec-drive/releases/tag/v1.4.6).
 - `v1.4.4` corrects task selection/resume and execution ownership, and improves project creation and explicit Bash invocation.
 - `v1.4.1` added macOS test-harness fixes without a runtime change over `v1.4.0`.
 - `v1.4.0` adds scoped per-key configuration, atomic project scaffolding, canonical project artifact destinations, and expanded portability/security regression coverage.

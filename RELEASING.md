@@ -1,11 +1,31 @@
 # Releasing Spec-Drive
 
-## Release 1.4.4
+## Release 1.4.6
 
-This release preserves the 1.4.3 model defaults and
-Codex companion. Changes are limited to task selection/resume, execution ownership,
-project-creation instructions, Bash invocation/diagnostics and regression tests.
-Validation of this patch does not establish new provider or installation results.
+Version 1.4.6 retains the unpublished 1.4.5 initialization fixes and adds a shared
+recovery protocol to `/spec-drive:new`. Resolver, scaffold, routing and researcher
+failures stop mutations and dependent dispatches, then return control to the calling
+agent for read-only inspection. The agent applies only an unequivocal, safe,
+already-authorized resolution; otherwise it asks the human one contextual question
+with a concrete recommendation. Without an answer the decision remains pending.
+Resumption rereads actual state and artifacts, preserving completed work without
+reinitialization or blind retries. Scaffold protections, model recovery, defaults
+and the Codex companion are unchanged from the preceding candidate. Version 1.4.5
+was not published separately. Tests cover shell behavior and instruction contracts,
+not conversational model E2E. Record platform CI results separately for the exact
+release commit; publication does not establish installation results.
+
+## Previous source candidate 1.4.5
+
+This unreleased candidate distinguishes new-directory creation, non-clobbering
+adoption of an existing directory, and read-only resume of an existing spec while
+preserving its approval gates. Partial and conflicting projects are preserved with
+explicit diagnostics. Legacy path-only output remains compatible, and
+`/spec-drive:new` uses the JSON opt-in contract. Preservation, idempotency,
+worktree, optional legacy and concurrency regressions cover these paths. Model
+defaults and the separately distributed Codex companion remain unchanged. Local
+validation does not establish publication, marketplace availability, installation,
+CI or new provider results.
 
 The canonical source, issue tracker and releases are maintained in
 [cerodb/spec-drive](https://github.com/cerodb/spec-drive). Distribution and

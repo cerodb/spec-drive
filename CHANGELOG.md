@@ -1,5 +1,32 @@
 # Changelog
 
+## v1.4.6 — 2026-10-01
+
+Version 1.4.6 retains the unpublished 1.4.5 initialization fixes and adds a shared
+recovery protocol to `/spec-drive:new`. Resolver, scaffold, routing and researcher
+failures stop mutations and dependent dispatches, then return control to the calling
+agent for read-only inspection. The agent applies only an unequivocal, safe,
+already-authorized resolution; otherwise it asks the human one contextual question
+with a concrete recommendation. Without an answer the decision remains pending.
+Resumption rereads actual state and artifacts, preserving completed work without
+reinitialization or blind retries. Scaffold protections, model recovery, defaults
+and the Codex companion are unchanged from the preceding candidate. Version 1.4.5
+was not published separately. Tests cover shell behavior and instruction contracts;
+they do not establish conversational model E2E or installation results.
+
+## v1.4.5 — Unreleased
+
+- Distinguish new-directory creation, non-clobbering adoption of an existing
+  directory, and read-only resume of an existing spec with its approval gates
+  preserved.
+- Preserve partial or conflicting project contents and report explicit diagnostics
+  instead of overwriting them. Keep legacy path-only input compatible and make
+  `/spec-drive:new` use the JSON opt-in contract.
+- Add preservation, idempotency, worktree, optional legacy and concurrency
+  regressions. Model defaults and the separately distributed Codex companion remain
+  unchanged. This is a local source candidate, not a publication or installation
+  claim.
+
 ## v1.4.4 — 2026-10-01
 
 - Select the first pending numbered task using its position in the complete task

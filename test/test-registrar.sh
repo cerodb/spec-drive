@@ -333,6 +333,192 @@ else
   fail "unsafe slug returned $BAD_STATUS instead of 64"
 fi
 
+echo "-- Structured classification and preservation (isolated fixtures)..."
+JSON_PROJECTS="$TMP_REGISTRAR/json projects"
+mkdir -p "$JSON_PROJECTS"
+
+invoke_json() {
+  bash hooks/scripts/create-project.sh --projects-container "$JSON_PROJECTS" \
+    --project-slug "$1" --goal "New requested goal must not replace existing material." \
+    --mode normal --research-depth standard --created-at "$CREATED_AT" --result-format json
+}
+
+expect_json() {
+  local slug="$1" outcome="$2" expected_status=0 status=0 output
+  [ "$outcome" != conflict ] || expected_status=2
+  output="$(invoke_json "$slug" 2>"$TMP_REGISTRAR/json.err")" || status=$?
+  if [ "$status" -eq "$expected_status" ] && printf '%s\n' "$output" | jq -e -s \
+    --arg outcome "$outcome" --arg path "$JSON_PROJECTS/$slug" \
+    'length == 1 and (.[0] | .path == $path and .outcome == $outcome and
+      (if $outcome == "resumable" then keys == ["outcome", "path", "phase"]
+       elif $outcome == "conflict" then keys == ["error", "outcome", "path"]
+       else keys == ["outcome", "path"] end))' >/dev/null; then
+    ok "$slug returns $outcome with status $expected_status"
+  else
+    fail "$slug expected $outcome/$expected_status, got $output/$status"
+  fi
+}
+
+assert_readonly_repeat() {
+  local slug="$1" outcome="$2"
+  local snapshot="$TMP_REGISTRAR/snapshot-$slug-$outcome"
+  cp -R "$JSON_PROJECTS/$slug" "$snapshot"
+  expect_json "$slug" "$outcome"
+  expect_json "$slug" "$outcome"
+  if diff -r "$snapshot" "$JSON_PROJECTS/$slug" >/dev/null; then
+    ok "$slug repeated classification preserves all bytes including Git"
+  else
+    fail "$slug repeated classification mutated the fixture"
+  fi
+}
+
+expect_json new created
+assert_readonly_repeat new resumable
+
+mkdir -p "$JSON_PROJECTS/materials/spec" "$JSON_PROJECTS/materials/assets"
+printf 'User README\n' >"$JSON_PROJECTS/materials/README.md"
+printf 'Unapproved background research\n' >"$JSON_PROJECTS/materials/spec/research.md"
+printf 'asset\n' >"$JSON_PROJECTS/materials/assets/source"
+cp -R "$JSON_PROJECTS/materials" "$TMP_REGISTRAR/materials-before"
+expect_json materials adopted
+if cmp -s "$TMP_REGISTRAR/materials-before/README.md" "$JSON_PROJECTS/materials/README.md" && \
+   cmp -s "$TMP_REGISTRAR/materials-before/spec/research.md" "$JSON_PROJECTS/materials/spec/research.md" && \
+   cmp -s "$TMP_REGISTRAR/materials-before/assets/source" "$JSON_PROJECTS/materials/assets/source" && \
+   jq -e '.phase == "research" and .awaitingApproval == false' "$JSON_PROJECTS/materials/spec/.spec-drive-state.json" >/dev/null; then
+  ok "adoption preserves material without inferring research approval"
+else
+  fail "adoption changed material or inferred approval"
+fi
+assert_readonly_repeat materials resumable
+
+mkdir -p "$JSON_PROJECTS/partial/spec"
+printf '{"scope":"project","projectSlug":"partial"}\n' >"$JSON_PROJECTS/partial/.spec-drive-config.json"
+for rel in idea.md .progress.md; do
+  printf '%s\n' '---' 'spec: "partial"' 'phase: idea' '---' 'Custom initial content; preserve exactly.' >"$JSON_PROJECTS/partial/spec/$rel"
+done
+git -C "$JSON_PROJECTS/partial" init -q
+git -C "$JSON_PROJECTS/partial" -c user.name=Fixture -c user.email=fixture@example.invalid commit --allow-empty -qm 'Fixture history'
+cp -R "$JSON_PROJECTS/partial" "$TMP_REGISTRAR/partial-before"
+expect_json partial adopted
+if cmp -s "$TMP_REGISTRAR/partial-before/spec/idea.md" "$JSON_PROJECTS/partial/spec/idea.md" && \
+   cmp -s "$TMP_REGISTRAR/partial-before/spec/.progress.md" "$JSON_PROJECTS/partial/spec/.progress.md" && \
+   diff -r "$TMP_REGISTRAR/partial-before/.git" "$JSON_PROJECTS/partial/.git" >/dev/null; then
+  ok "initial partial preserves custom idea, progress and Git history"
+else
+  fail "initial partial replaced existing material"
+fi
+assert_readonly_repeat partial resumable
+
+# Copy a complete core and adjust only its identity to form independent cases.
+copy_core() {
+  local slug="$1"
+  cp -R "$JSON_PROJECTS/new" "$JSON_PROJECTS/$slug"
+  jq --arg slug "$slug" '.projectSlug = $slug' "$JSON_PROJECTS/new/.spec-drive-config.json" >"$JSON_PROJECTS/$slug/.spec-drive-config.json"
+  jq --arg slug "$slug" --arg base "$JSON_PROJECTS/$slug/spec" '.name = $slug | .basePath = $base' \
+    "$JSON_PROJECTS/new/spec/.spec-drive-state.json" >"$JSON_PROJECTS/$slug/spec/.spec-drive-state.json"
+  for rel in idea.md .progress.md; do
+    sed "s/spec: \"new\"/spec: \"$slug\"/" "$JSON_PROJECTS/new/spec/$rel" >"$JSON_PROJECTS/$slug/spec/$rel"
+  done
+}
+
+copy_core legacy-no-depth
+jq 'del(.researchDepth)' "$JSON_PROJECTS/legacy-no-depth/spec/.spec-drive-state.json" >"$TMP_REGISTRAR/state"
+mv "$TMP_REGISTRAR/state" "$JSON_PROJECTS/legacy-no-depth/spec/.spec-drive-state.json"
+assert_readonly_repeat legacy-no-depth resumable
+
+copy_core legacy-minimal
+jq '{name, basePath, phase}' "$JSON_PROJECTS/legacy-minimal/spec/.spec-drive-state.json" >"$TMP_REGISTRAR/state"
+mv "$TMP_REGISTRAR/state" "$JSON_PROJECTS/legacy-minimal/spec/.spec-drive-state.json"
+assert_readonly_repeat legacy-minimal resumable
+
+for field in mode researchDepth awaitingApproval; do
+  copy_core "invalid-$field"
+  jq --arg field "$field" '.[$field] = null' "$JSON_PROJECTS/invalid-$field/spec/.spec-drive-state.json" >"$TMP_REGISTRAR/state"
+  mv "$TMP_REGISTRAR/state" "$JSON_PROJECTS/invalid-$field/spec/.spec-drive-state.json"
+  assert_readonly_repeat "invalid-$field" conflict
+done
+
+# A linked worktree has a regular .git file; both it and the shared repository
+# must remain untouched during adoption and read-only recognition.
+WORKTREE_REPO="$TMP_REGISTRAR/worktree-owner"
+mkdir -p "$WORKTREE_REPO"
+git -C "$WORKTREE_REPO" init -q
+printf 'Existing tracked material\n' >"$WORKTREE_REPO/README.md"
+git -C "$WORKTREE_REPO" add README.md
+git -C "$WORKTREE_REPO" -c user.name=Fixture -c user.email=fixture@example.invalid commit -qm 'Worktree fixture'
+git -C "$WORKTREE_REPO" worktree add --quiet --detach "$JSON_PROJECTS/worktree"
+cp -R "$WORKTREE_REPO/.git" "$TMP_REGISTRAR/worktree-git-before"
+cp "$JSON_PROJECTS/worktree/.git" "$TMP_REGISTRAR/worktree-pointer-before"
+expect_json worktree adopted
+assert_readonly_repeat worktree resumable
+if [ -f "$JSON_PROJECTS/worktree/.git" ] && \
+   cmp -s "$TMP_REGISTRAR/worktree-pointer-before" "$JSON_PROJECTS/worktree/.git" && \
+   cmp -s "$WORKTREE_REPO/README.md" "$JSON_PROJECTS/worktree/README.md" && \
+   diff -r "$TMP_REGISTRAR/worktree-git-before" "$WORKTREE_REPO/.git" >/dev/null; then
+  ok "worktree adoption and repetition preserve Git metadata and tracked material"
+else
+  fail "worktree adoption or repetition changed Git metadata or tracked material"
+fi
+
+copy_core awaiting
+jq '.awaitingApproval = true' "$JSON_PROJECTS/awaiting/spec/.spec-drive-state.json" >"$TMP_REGISTRAR/state"
+mv "$TMP_REGISTRAR/state" "$JSON_PROJECTS/awaiting/spec/.spec-drive-state.json"
+assert_readonly_repeat awaiting conflict
+printf 'Research ready for review, not approved\n' >"$JSON_PROJECTS/awaiting/spec/research.md"
+assert_readonly_repeat awaiting resumable
+
+for phase in requirements design tasks execution completed; do
+  copy_core "phase-$phase"
+  jq --arg phase "$phase" '.phase = $phase' "$JSON_PROJECTS/phase-$phase/spec/.spec-drive-state.json" >"$TMP_REGISTRAR/state"
+  mv "$TMP_REGISTRAR/state" "$JSON_PROJECTS/phase-$phase/spec/.spec-drive-state.json"
+  assert_readonly_repeat "phase-$phase" conflict
+  artifact="$phase.md"
+  case "$phase" in execution|completed) artifact=tasks.md ;; esac
+  printf 'Phase material\n' >"$JSON_PROJECTS/phase-$phase/spec/$artifact"
+  assert_readonly_repeat "phase-$phase" resumable
+done
+
+for slug in malformed-config malformed-state wrong-identity wrong-base wrong-type missing-state advanced-partial; do
+  copy_core "$slug"
+  case "$slug" in
+    malformed-config) printf '{invalid\n' >"$JSON_PROJECTS/$slug/.spec-drive-config.json" ;;
+    malformed-state) printf '{}\n' >"$JSON_PROJECTS/$slug/spec/.spec-drive-state.json" ;;
+    wrong-identity) printf '{"scope":"project","projectSlug":"other"}\n' >"$JSON_PROJECTS/$slug/.spec-drive-config.json" ;;
+    wrong-base) cp "$JSON_PROJECTS/new/spec/.spec-drive-state.json" "$JSON_PROJECTS/$slug/spec/.spec-drive-state.json" ;;
+    wrong-type) rm "$JSON_PROJECTS/$slug/spec/idea.md"; mkdir "$JSON_PROJECTS/$slug/spec/idea.md" ;;
+    missing-state) rm "$JSON_PROJECTS/$slug/spec/.spec-drive-state.json"; printf 'Later canonical work\n' >"$JSON_PROJECTS/$slug/spec/design.md" ;;
+    advanced-partial)
+      rm "$JSON_PROJECTS/$slug/spec/.progress.md"
+      jq '.taskIndex = 3' "$JSON_PROJECTS/$slug/spec/.spec-drive-state.json" >"$TMP_REGISTRAR/state"
+      mv "$TMP_REGISTRAR/state" "$JSON_PROJECTS/$slug/spec/.spec-drive-state.json" ;;
+  esac
+  assert_readonly_repeat "$slug" conflict
+done
+
+mkdir -p "$JSON_PROJECTS/dangling/spec"
+ln -s "$TMP_REGISTRAR/nonexistent" "$JSON_PROJECTS/dangling/spec/idea.md"
+expect_json dangling conflict
+expect_json dangling conflict
+if [ -L "$JSON_PROJECTS/dangling/spec/idea.md" ] && [ ! -e "$JSON_PROJECTS/dangling/.spec-drive-config.json" ]; then
+  ok "dangling canonical link remains untouched"
+else
+  fail "dangling canonical link was followed or partial artifacts appeared"
+fi
+ln -s "$TMP_REGISTRAR/absent-target" "$JSON_PROJECTS/dangling-destination"
+expect_json dangling-destination conflict
+expect_json dangling-destination conflict
+
+mkdir -p "$JSON_PROJECTS/parent-root"
+git -C "$JSON_PROJECTS" init -q
+cp -R "$JSON_PROJECTS/.git" "$TMP_REGISTRAR/parent-git-before"
+assert_readonly_repeat parent-root conflict
+if diff -r "$TMP_REGISTRAR/parent-git-before" "$JSON_PROJECTS/.git" >/dev/null; then
+  ok "parent Git repository is preserved"
+else
+  fail "parent Git repository was changed"
+fi
+assert_no_staging "$JSON_PROJECTS"
+
 echo ""
 echo "Registrar tests: $PASS passed, $FAIL failed"
 
