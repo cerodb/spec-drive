@@ -21,7 +21,7 @@ class NewInvocation(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix="spec-drive-new-")
         self.addCleanup(self.tmp.cleanup)
-        self.work = Path(self.tmp.name) / "workspace with spaces"
+        self.work = Path(self.tmp.name).resolve() / "workspace with spaces"
         self.work.mkdir()
         self.config = self.work / ".spec-drive-config.json"
         self.config.write_text(json.dumps({"projectRoot": "./projects with spaces"}))
